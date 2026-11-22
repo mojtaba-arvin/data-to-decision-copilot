@@ -1,3 +1,4 @@
+import asyncio
 import json
 from collections.abc import Iterator
 from pathlib import Path
@@ -7,13 +8,20 @@ import pytest
 
 from d2d.connectors.base import SchemaSnapshot
 from d2d.connectors.duckdb import DuckDBConnector
+from d2d.core.evidence_store import SQLiteEvidenceStore
 from d2d.core.model_planning import (
     ModelBackedQueryPlanner,
     ModelPlanningError,
     ModelProviderIdentity,
     StructuredGenerationRequest,
 )
-from d2d.core.query_planning import QueryPlan, QueryPlanningError, compile_query_plan
+from d2d.core.query_planning import (
+    QueryPlan,
+    QueryPlanningError,
+    QueryPlanningRuntime,
+    compile_query_plan,
+)
+from d2d.core.sql_executor import DuckDBQueryExecutor
 
 
 class FakeStructuredProvider:
@@ -143,3 +151,47 @@ def test_planner_identity_is_stable_and_release_specific() -> None:
         ),
     )
     assert changed.identity.artifact_sha256 != first.identity.artifact_sha256
+
+
+def test_model_planner_runs_only_through_bounded_runtime_and_persists_evidence(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "runtime.duckdb"
+    connection = duckdb.connect(str(path))
+    connection.execute("CREATE TABLE orders (id INTEGER, amount INTEGER)")
+    connection.execute("INSERT INTO orders VALUES (1, 10), (2, 20)")
+    connection.close()
+
+    source = DuckDBConnector(path)
+    source.open()
+    try:
+        snapshot = source.snapshot()
+        response = json.dumps(
+            {
+                "schema_name": "main",
+                "table_name": "orders",
+                "schema_fingerprint": snapshot.fingerprint,
+                "aggregates": [
+                    {"function": "count", "column": None, "alias": "row_count"}
+                ],
+                "limit": 1,
+            }
+        )
+        adapter, _ = planner(response)
+        store = SQLiteEvidenceStore(tmp_path / "evidence.sqlite")
+        runtime = QueryPlanningRuntime(
+            source_id="warehouse",
+            data_source=source,
+            executor=DuckDBQueryExecutor(path),
+            evidence_store=store,
+        )
+        result = asyncio.run(runtime.run("count orders", adapter))
+
+        assert result.result.rows == ((2,),)
+        assert result.evidence_sequence == 1
+        evidence = store.get(result.evidence_id)
+        assert evidence is not None
+        assert evidence.rows == (("2",),)
+        assert store.verify().valid
+    finally:
+        source.close()
