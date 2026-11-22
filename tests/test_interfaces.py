@@ -33,6 +33,8 @@ def test_shared_service_executes_query_and_records_history(catalog: Path, tmp_pa
         result = asyncio.run(service.query("count rows in orders"))
         assert result.get("rows") == [[2]]
         assert result.get("evidence_id")
+        assert "parameters" not in result
+        assert result.get("parameter_count") == 0
         assert service.history()[0]["question"] == "count rows in orders"
         assert '"name": "orders"' in json.dumps(service.schema())
     finally:
