@@ -47,7 +47,7 @@ class CopilotService:
             "rows": [[_json_value(value) for value in row] for row in result.result.rows],
             "truncated": result.result.truncated,
             "sql": result.query.sql,
-            "parameters": [_json_value(value) for value in result.query.parameters],
+            "parameter_count": len(result.query.parameters),
             "evidence_id": result.evidence_id,
             "evidence_sequence": result.evidence_sequence,
             "schema_fingerprint": result.query.schema_fingerprint,
