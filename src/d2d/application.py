@@ -139,6 +139,4 @@ def _json_value(value: Any) -> object:
         return value
     if isinstance(value, (tuple, list)):
         return [_json_value(item) for item in value]
-    if isinstance(value, dict):
-        return {str(key): _json_value(item) for key, item in value.items()}
     return str(value)
