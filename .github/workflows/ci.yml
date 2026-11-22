@@ -2,12 +2,17 @@ name: CI
 
 on:
   push:
-    branches: [main, "work/**"]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
+
+# One isolated CI lane per PR; rapid updates supersede obsolete runs.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   quality:
