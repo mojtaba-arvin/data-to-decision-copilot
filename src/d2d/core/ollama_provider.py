@@ -8,9 +8,9 @@ from __future__ import annotations
 import ipaddress
 import json
 from dataclasses import dataclass
+from typing import cast
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
-from typing import cast
 from urllib.request import Request, urlopen
 
 from d2d.core.model_planning import StructuredGenerationRequest, StructuredPlanProvider
