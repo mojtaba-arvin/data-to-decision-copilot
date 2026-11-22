@@ -1,6 +1,4 @@
 """SQLite-backed append-only evidence journal with a verifiable hash chain."""
-from __future__ import annotations
-
 import hashlib
 import json
 import sqlite3
