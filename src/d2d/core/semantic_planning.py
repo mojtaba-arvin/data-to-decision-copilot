@@ -1,0 +1,264 @@
+"""Constrained offline semantic planning and query-to-decision orchestration.
+
+The rule-based adapter supports a deliberately tiny grammar. It is not an LLM and
+fails closed when a question cannot be mapped unambiguously to discovered schema.
+"""
+from __future__ import annotations
+
+import hashlib
+import re
+from dataclasses import dataclass
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from d2d.connectors.base import SchemaSnapshot, TableSchema
+from d2d.core.decision_trace_store import SQLiteDecisionTraceStore
+from d2d.core.evidence_store import SQLiteEvidenceStore
+from d2d.core.query_planning import (
+    AggregateFunction,
+    AggregateSpec,
+    QueryPlan,
+    QueryPlanner,
+    QueryPlannerIdentity,
+    QueryPlanningResult,
+    QueryPlanningRuntime,
+)
+from d2d.core.runtime import (
+    DecisionPolicy,
+    DecisionRuntime,
+    Planner as DecisionPlanner,
+    RuntimeResult,
+)
+
+
+class SemanticPlanningError(ValueError):
+    """Raised when the supported question grammar cannot be resolved safely."""
+
+
+@dataclass(frozen=True, slots=True)
+class RuleBasedSemanticPlanner:
+    """Offline, deterministic parser for explicit aggregate/projection templates.
+
+    Supported examples:
+      - "count rows in orders"
+      - "sum amount by region in orders"
+      - "average amount in orders"
+      - "show id, region from orders"
+
+    Table and column names must be present in the current schema and referenced
+    explicitly. No fuzzy matching, inferred joins, filters, or free-form SQL.
+    """
+
+    planner_id: str = "offline-rule-semantic-planner"
+    version: str = "1"
+
+    @property
+    def identity(self) -> QueryPlannerIdentity:
+        artifact = hashlib.sha256(
+            b"offline-rule-semantic-planner:v1:count,sum,avg,min,max,projection"
+        ).hexdigest()
+        prompt = hashlib.sha256(
+            b"grammar:count|aggregate-column-by-group|show-columns"
+        ).hexdigest()
+        return QueryPlannerIdentity(
+            planner_id=self.planner_id,
+            version=self.version,
+            artifact_sha256=artifact,
+            prompt_sha256=prompt,
+        )
+
+    def plan(self, question: str, snapshot: SchemaSnapshot) -> QueryPlan:
+        text = " ".join(question.strip().rstrip("?.!").split())
+        if not text:
+            raise SemanticPlanningError("question must not be empty")
+
+        count = re.fullmatch(
+            r"count\s+(?:of\s+)?(?:rows|records)\s+(?:in|from)\s+([\w]+)",
+            text,
+            re.IGNORECASE,
+        )
+        aggregate = re.fullmatch(
+            r"(sum|total|average|avg|min|max)\s+(?:of\s+)?([\w]+)"
+            r"(?:\s+by\s+([\w]+))?\s+(?:in|from)\s+([\w]+)",
+            text,
+            re.IGNORECASE,
+        )
+        projection = re.fullmatch(
+            r"(?:show|list|select)\s+([\w, ]+)\s+(?:in|from)\s+([\w]+)",
+            text,
+            re.IGNORECASE,
+        )
+
+        if count:
+            table = self._table(snapshot, count.group(1))
+            return QueryPlan(
+                schema_name=table.table.schema,
+                table_name=table.table.name,
+                schema_fingerprint=snapshot.fingerprint,
+                aggregates=(AggregateSpec(function=AggregateFunction.COUNT, alias="row_count"),),
+                limit=1,
+            )
+
+        if aggregate:
+            operation, column_name, group_name, table_name = aggregate.groups()
+            table = self._table(snapshot, table_name)
+            column = self._column(table, column_name)
+            function = {
+                "sum": AggregateFunction.SUM,
+                "total": AggregateFunction.SUM,
+                "average": AggregateFunction.AVG,
+                "avg": AggregateFunction.AVG,
+                "min": AggregateFunction.MIN,
+                "max": AggregateFunction.MAX,
+            }[operation.casefold()]
+            groups: tuple[str, ...] = ()
+            if group_name:
+                groups = (self._column(table, group_name),)
+            alias = f"{function.value}_{column}"
+            return QueryPlan(
+                schema_name=table.table.schema,
+                table_name=table.table.name,
+                schema_fingerprint=snapshot.fingerprint,
+                columns=groups,
+                aggregates=(AggregateSpec(function=function, column=column, alias=alias),),
+                group_by=groups,
+                limit=100,
+            )
+
+        if projection:
+            names, table_name = projection.groups()
+            table = self._table(snapshot, table_name)
+            columns = tuple(self._column(table, item.strip()) for item in names.split(","))
+            if not columns or len(columns) != len(set(columns)):
+                raise SemanticPlanningError("projection columns must be non-empty and unique")
+            return QueryPlan(
+                schema_name=table.table.schema,
+                table_name=table.table.name,
+                schema_fingerprint=snapshot.fingerprint,
+                columns=columns,
+                limit=100,
+            )
+
+        raise SemanticPlanningError(
+            "unsupported question; use count rows, an aggregate, or show/list columns"
+        )
+
+    @staticmethod
+    def _table(snapshot: SchemaSnapshot, requested: str) -> TableSchema:
+        matches = [
+            item for item in snapshot.tables
+            if item.table.name.casefold() == requested.casefold()
+        ]
+        if len(matches) != 1:
+            raise SemanticPlanningError(
+                f"table is unknown or ambiguous in discovered schema: {requested}"
+            )
+        return matches[0]
+
+    @staticmethod
+    def _column(table: TableSchema, requested: str) -> str:
+        matches = [
+            item.name for item in table.columns
+            if item.name.casefold() == requested.casefold()
+        ]
+        if len(matches) != 1:
+            raise SemanticPlanningError(
+                f"column is unknown in discovered table: {requested}"
+            )
+        return matches[0]
+
+
+class EvaluationCase(BaseModel):
+    """One fixed semantic-planner regression case."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    question: str = Field(min_length=1)
+    expected: QueryPlan
+
+
+class EvaluationReport(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    total: int = Field(ge=0)
+    passed: int = Field(ge=0)
+    rejected: int = Field(ge=0)
+
+    @property
+    def accuracy(self) -> float:
+        return self.passed / self.total if self.total else 0.0
+
+
+def evaluate_semantic_planner(
+    planner: QueryPlanner,
+    *,
+    snapshot: SchemaSnapshot,
+    cases: tuple[EvaluationCase, ...],
+) -> EvaluationReport:
+    """Compare exact typed plans; invalid/unsupported outputs count as failures."""
+    passed = 0
+    rejected = 0
+    for case in cases:
+        try:
+            actual = planner.plan(case.question, snapshot)
+        except (ValueError, TypeError):
+            rejected += 1
+            continue
+        if actual == case.expected:
+            passed += 1
+    return EvaluationReport(total=len(cases), passed=passed, rejected=rejected)
+
+
+class DecisionStage(Protocol):
+    """Explicit decision proposal stage; it receives persisted evidence only."""
+
+    def run(self, *, question: str, evidence_ids: tuple[str, ...]) -> RuntimeResult: ...
+
+
+@dataclass(frozen=True, slots=True)
+class QueryDecisionResult:
+    query: QueryPlanningResult
+    decision: RuntimeResult | None
+
+
+class QueryDecisionRuntime:
+    """Run bounded query first; optionally pass its persisted Evidence to policy.
+
+    No decision is generated automatically. If no decision planner is supplied,
+    the result is evidence-only. If supplied, Phase 9's DecisionRuntime validates
+    the evidence journal, checks provenance, enforces policy, then persists trace.
+    """
+
+    def __init__(
+        self,
+        *,
+        query_runtime: QueryPlanningRuntime,
+        evidence_store: SQLiteEvidenceStore,
+        trace_store: SQLiteDecisionTraceStore,
+        policy: DecisionPolicy,
+    ) -> None:
+        self._query_runtime = query_runtime
+        self._decision_runtime = DecisionRuntime(
+            evidence_store=evidence_store,
+            trace_store=trace_store,
+            policy=policy,
+        )
+
+    async def run(
+        self,
+        *,
+        question: str,
+        query_planner: QueryPlanner,
+        decision_planner: DecisionPlanner | None = None,
+        expected_schema_fingerprints: dict[str, str] | None = None,
+    ) -> QueryDecisionResult:
+        query = await self._query_runtime.run(question, query_planner)
+        if decision_planner is None:
+            return QueryDecisionResult(query=query, decision=None)
+        decision = self._decision_runtime.run(
+            question=question,
+            evidence_ids=(query.evidence_id,),
+            planner=decision_planner,
+            expected_schema_fingerprints=expected_schema_fingerprints,
+        )
+        return QueryDecisionResult(query=query, decision=decision)
