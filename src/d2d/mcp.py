@@ -9,6 +9,32 @@ from typing import TextIO, cast
 from d2d.application import CopilotService
 
 
+def _tools_list_result() -> object:
+    return {
+        "tools": [
+            {
+                "name": "query_analytics",
+                "description": "Run a bounded, read-only natural-language analytics query.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {"question": {"type": "string", "minLength": 1}},
+                    "required": ["question"],
+                    "additionalProperties": False,
+                },
+            },
+            {
+                "name": "get_schema",
+                "description": "Return the discovered schema and its fingerprint.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": cast(dict[str, object], {}),
+                    "additionalProperties": False,
+                },
+            },
+        ]
+    }
+
+
 def _content_result(payload: object) -> object:
     return {
         "content": [
@@ -47,25 +73,7 @@ def run_stdio(
             elif method == "ping":
                 result = {}
             elif method == "tools/list":
-                result = {
-                    "tools": [
-                        {
-                            "name": "query_analytics",
-                            "description": "Run a bounded, read-only natural-language analytics query.",
-                            "inputSchema": {
-                                "type": "object",
-                                "properties": {"question": {"type": "string", "minLength": 1}},
-                                "required": ["question"],
-                                "additionalProperties": False,
-                            },
-                        },
-                        {
-                            "name": "get_schema",
-                            "description": "Return the discovered schema and its fingerprint.",
-                            "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
-                        },
-                    ]
-                }
+                result = _tools_list_result()
             elif method == "tools/call":
                 params_value = request.get("params")
                 if not isinstance(params_value, dict):
