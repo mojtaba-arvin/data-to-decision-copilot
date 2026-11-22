@@ -271,3 +271,22 @@ def test_semantic_layer_rejects_ambiguous_business_aliases(database: Path) -> No
         RuleBasedSemanticPlanner(semantic_layer=layer).plan(
             "sum sales in orders", snapshot
         )
+
+
+def test_persian_arabic_yeh_kaf_variants_are_normalized(database: Path) -> None:
+    with DuckDBConnector(database) as source:
+        snapshot = source.snapshot()
+    planner = RuleBasedSemanticPlanner()
+    arabic_letters = planner.plan("ميانگين amount در orders", snapshot)
+    canonical = planner.plan("average amount in orders", snapshot)
+    assert arabic_letters == canonical
+
+
+def test_projection_rejects_duplicate_columns_and_unknown_identifiers(database: Path) -> None:
+    with DuckDBConnector(database) as source:
+        snapshot = source.snapshot()
+    planner = RuleBasedSemanticPlanner()
+    with pytest.raises(SemanticPlanningError, match="unique"):
+        planner.plan("show id, id from orders", snapshot)
+    with pytest.raises(SemanticPlanningError, match="unknown"):
+        planner.plan("show missing_column from orders", snapshot)
