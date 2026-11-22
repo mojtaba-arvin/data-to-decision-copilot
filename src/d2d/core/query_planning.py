@@ -215,7 +215,9 @@ def compile_query_plan(
                 clauses.append(f"{column} {operators[item.operator]} ?")
                 parameters.append(item.value)
             elif item.operator in {FilterOperator.IN, FilterOperator.NOT_IN}:
-                values = tuple(item.value)  # validated as a non-empty tuple/list
+                if not isinstance(item.value, (tuple, list)) or not item.value:
+                    raise QueryPlanningError("IN filters require a non-empty list of values")
+                values: tuple[QueryScalar, ...] = tuple(item.value)
                 placeholders = ", ".join("?" for _ in values)
                 keyword = "NOT IN" if item.operator is FilterOperator.NOT_IN else "IN"
                 clauses.append(f"{column} {keyword} ({placeholders})")
