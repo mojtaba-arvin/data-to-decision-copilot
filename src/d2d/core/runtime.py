@@ -218,6 +218,10 @@ def evaluate_policy(
         ("decision.rationale", decision.rationale),
     ]
     statements.extend((f"claim.{claim.claim_id}", claim.statement) for claim in plan.claims)
+    statements.extend((f"alternative.{index}.action", item.action) for index, item in enumerate(decision.alternatives))
+    statements.extend((f"alternative.{index}.trade_off", item.trade_off) for index, item in enumerate(decision.alternatives))
+    statements.extend((f"reversal_condition.{index}", item) for index, item in enumerate(decision.reversal_conditions))
+    statements.extend((f"caveat.{index}", item) for index, item in enumerate(decision.caveats))
     for label, statement in statements:
         unsupported = _numbers_in_text(statement) - numeric_values
         if unsupported:
