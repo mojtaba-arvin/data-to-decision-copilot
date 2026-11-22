@@ -84,3 +84,10 @@ deployment constraints, and known limitations.
 
 ## License
 MIT. See [LICENSE](LICENSE).
+
+
+## Examples and release
+
+A synthetic sales catalog and runnable query walkthrough are available in
+[examples/](examples/README.md). Use [the release checklist](docs/release-checklist.md)
+to verify the exact candidate commit before publishing artifacts.
