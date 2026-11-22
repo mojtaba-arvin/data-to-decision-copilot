@@ -68,3 +68,20 @@ def test_rejects_excessive_columns(file_root: Path) -> None:
 def test_csv_inference_sample_must_be_positive(file_root: Path) -> None:
     with pytest.raises(ValueError, match="csv_sample_size"):
         FileDataSource(file_root, ["orders.csv"], csv_sample_size=0)
+
+
+def test_file_catalog_materializes_sources_and_enforces_total_size(file_root: Path, tmp_path: Path) -> None:
+    catalog = tmp_path / "catalog.duckdb"
+    with FileDataSource(
+        file_root, ["orders.csv", "products.parquet"], catalog_path=catalog
+    ) as source:
+        assert source.catalog_path == str(catalog)
+        assert source.list_tables()
+        assert source._connection is not None
+        assert source._connection.execute(
+            'SELECT COUNT(*) FROM "source_0001"'
+        ).fetchone() == (2,)
+    with pytest.raises(FileSourceError, match="max_total_bytes"):
+        FileDataSource(
+            file_root, ["orders.csv", "products.parquet"], max_total_bytes=1
+        ).open()
