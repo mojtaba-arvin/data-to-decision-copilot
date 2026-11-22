@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from d2d.core.contracts import Confidence, Decision, DecisionClaim, Evidence
+from d2d.core.contracts import ClaimKind, Confidence, Decision, DecisionClaim, Evidence
 from d2d.core.decision_trace_store import SQLiteDecisionTraceStore
 from d2d.core.evidence import create_execution_evidence
 from d2d.core.evidence_store import SQLiteEvidenceStore
@@ -165,3 +165,54 @@ def test_policy_minimum_counts_only_decision_linked_evidence():
     )
     assert not report.allowed
     assert "insufficient decision-linked evidence records" in report.violations
+
+
+def test_fact_claim_requires_literal_value_from_linked_evidence():
+    evidence = make_evidence(7)
+    base = make_plan(evidence)
+    fact = base.claims[0].model_copy(
+        update={"kind": ClaimKind.FACT, "statement": "Observed stock level is 7 units."}
+    )
+    supported = DecisionPlan(decision=base.decision, claims=(fact,))
+    unsupported_fact = fact.model_copy(update={"statement": "Stock is critically low."})
+    unsupported = DecisionPlan(decision=base.decision, claims=(unsupported_fact,))
+    policy = DecisionPolicy(policy_id="fact-check", version="1")
+
+    assert evaluate_policy(supported, evidence=(evidence,), policy=policy).allowed
+    rejected = evaluate_policy(unsupported, evidence=(evidence,), policy=policy)
+    assert not rejected.allowed
+    assert any("literal value match" in item for item in rejected.violations)
+
+
+def test_recommendation_claim_must_match_decision_action():
+    evidence = make_evidence()
+    base = make_plan(evidence)
+    claim = base.claims[0].model_copy(
+        update={"kind": ClaimKind.RECOMMENDATION, "statement": "Increase purchasing immediately"}
+    )
+    plan = DecisionPlan(decision=base.decision, claims=(claim,))
+    report = evaluate_policy(
+        plan, evidence=(evidence,), policy=DecisionPolicy(policy_id="recommendation", version="1")
+    )
+    assert not report.allowed
+    assert any("must match the decision action" in item for item in report.violations)
+
+
+def test_high_confidence_requires_two_distinct_evidence_sources():
+    first = make_evidence(7)
+    second = make_evidence(7).model_copy(update={"source_id": "inventory"})
+    base = make_plan(first)
+    decision = base.decision.model_copy(
+        update={"evidence_ids": (first.evidence_id, second.evidence_id), "confidence": Confidence.HIGH}
+    )
+    claim = base.claims[0].model_copy(
+        update={"evidence_ids": (first.evidence_id, second.evidence_id)}
+    )
+    plan = DecisionPlan(decision=decision, claims=(claim,))
+    policy = DecisionPolicy(policy_id="calibrated", version="1")
+
+    one_source = evaluate_policy(plan, evidence=(first,), policy=policy)
+    two_sources = evaluate_policy(plan, evidence=(first, second), policy=policy)
+    assert not one_source.allowed
+    assert any("two distinct sources" in item for item in one_source.violations)
+    assert two_sources.allowed
