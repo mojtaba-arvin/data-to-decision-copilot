@@ -1,11 +1,11 @@
+import asyncio
 from pathlib import Path
 
-import asyncio
 import duckdb
 import pytest
 
-from d2d.connectors.duckdb import DuckDBConnector
 from d2d.connectors.base import SchemaSnapshot
+from d2d.connectors.duckdb import DuckDBConnector
 from d2d.core.evidence_store import SQLiteEvidenceStore
 from d2d.core.query_planning import (
     AggregateFunction,
