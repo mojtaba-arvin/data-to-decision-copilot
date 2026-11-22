@@ -17,6 +17,7 @@ from d2d.connectors.base import (
     TableSchema,
 )
 
+
 class FileSourceError(RuntimeError):
     """Raised when a file source violates policy or cannot be inspected."""
 
