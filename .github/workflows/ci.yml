@@ -40,4 +40,4 @@ jobs:
       - name: Build wheel and source distribution
         run: uv build
       - name: Installed wheel CLI smoke test
-        run: uv run --no-project --with dist/*.whl d2d --help
+        run: uv run --no-project --with dist/*.whl python -m d2d.cli --help
