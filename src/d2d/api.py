@@ -5,6 +5,7 @@ import asyncio
 import ipaddress
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import cast
 
 from d2d.application import CopilotService
 
@@ -58,14 +59,19 @@ def create_server(
                 self._send(413, {"error": "request_body_out_of_bounds"})
                 return
             try:
-                payload = json.loads(self.rfile.read(length))
+                decoded: object = json.loads(self.rfile.read(length))
             except (UnicodeDecodeError, json.JSONDecodeError):
                 self._send(400, {"error": "invalid_json"})
                 return
-            if not isinstance(payload, dict) or not isinstance(payload.get("question"), str):
+            if not isinstance(decoded, dict):
                 self._send(400, {"error": "question_must_be_a_string"})
                 return
-            question = payload["question"]
+            payload = cast(dict[str, object], decoded)
+            question_value = payload.get("question")
+            if not isinstance(question_value, str):
+                self._send(400, {"error": "question_must_be_a_string"})
+                return
+            question = question_value
             if not question.strip() or len(question.encode("utf-8")) > _MAX_BODY_BYTES:
                 self._send(400, {"error": "question_empty_or_too_large"})
                 return
