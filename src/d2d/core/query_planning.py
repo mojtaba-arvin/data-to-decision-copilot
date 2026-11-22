@@ -132,7 +132,7 @@ class QueryPlan(BaseModel):
 
 
 def _is_scalar(value: object) -> bool:
-    return value is None or isinstance(value, (str, int, float, bool))
+    return isinstance(value, (str, int, float, bool))
 
 
 def _quote_identifier(value: str) -> str:
@@ -305,6 +305,7 @@ class QueryPlanningResult:
     evidence_id: str
     evidence_sequence: int
     planner_reference: str
+    prompt_sha256: str
 
 
 class QueryPlanningRuntime:
@@ -329,6 +330,7 @@ class QueryPlanningRuntime:
         if not question.strip():
             raise QueryPlanningError("question must not be empty")
         snapshot = self._data_source.snapshot()
+        identity = planner.identity
         plan = planner.plan(question, snapshot)
         query = compile_query_plan(plan, snapshot=snapshot, source_id=self._source_id)
         started = time.perf_counter()
@@ -345,11 +347,11 @@ class QueryPlanningRuntime:
             execution_ms=execution_ms,
         )
         sequence = self._evidence_store.append(evidence)
-        identity = planner.identity
         return QueryPlanningResult(
             query=query,
             result=result,
             evidence_id=evidence.evidence_id,
             evidence_sequence=sequence,
             planner_reference=identity.reference,
+            prompt_sha256=identity.prompt_sha256,
         )
