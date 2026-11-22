@@ -44,6 +44,8 @@ jobs:
         run: uv run pyright
       - name: Tests and coverage
         run: uv run pytest --cov=d2d --cov-report=term-missing
+      - name: Synthetic performance smoke
+        run: uv run python benchmarks/run_benchmark.py --rows 10000 --iterations 5
 
   dependency-audit:
     name: Dependency vulnerability audit
