@@ -70,3 +70,49 @@ def test_metadata_queries_do_not_accept_identifier_injection(database_path: Path
         DuckDBConnectorError, match="not found"
     ):
         source.describe_table("main' OR 1=1 --", "orders")
+
+
+from d2d.connectors.base import DataSource, DiscoveryLimits
+
+
+def test_discovery_limits_validate_positive_values() -> None:
+    with pytest.raises(ValueError, match="max_tables"):
+        DiscoveryLimits(max_tables=0)
+    with pytest.raises(ValueError, match="max_columns_per_table"):
+        DiscoveryLimits(max_columns_per_table=0)
+
+
+def test_table_limit_fails_closed(database_path: Path) -> None:
+    with DuckDBConnector(database_path, limits=DiscoveryLimits(max_tables=1)) as source:
+        assert len(source.list_tables()) == 1
+
+    connection = duckdb.connect(str(database_path))
+    connection.execute("CREATE TABLE second_table (id INTEGER)")
+    connection.close()
+    with DuckDBConnector(database_path, limits=DiscoveryLimits(max_tables=1)) as source:
+        with pytest.raises(DuckDBConnectorError, match="max_tables=1"):
+            source.list_tables()
+
+
+def test_column_limit_fails_closed(database_path: Path) -> None:
+    limits = DiscoveryLimits(max_columns_per_table=2)
+    with DuckDBConnector(database_path, limits=limits) as source:
+        with pytest.raises(DuckDBConnectorError, match="max_columns_per_table=2"):
+            source.describe_table("main", "orders")
+
+
+def test_snapshot_obeys_relation_limit(database_path: Path) -> None:
+    connection = duckdb.connect(str(database_path))
+    connection.execute("CREATE TABLE second_table (id INTEGER)")
+    connection.close()
+    with DuckDBConnector(database_path, limits=DiscoveryLimits(max_tables=1)) as source:
+        with pytest.raises(DuckDBConnectorError, match="max_tables=1"):
+            source.snapshot()
+
+
+def test_duckdb_connector_satisfies_data_source_protocol(database_path: Path) -> None:
+    source: DataSource = DuckDBConnector(database_path)
+    with source:
+        assert source.list_tables()
+        assert source.describe_table("main", "orders").columns
+        assert source.snapshot().fingerprint
