@@ -34,7 +34,9 @@ def test_shared_service_executes_query_and_records_history(catalog: Path, tmp_pa
         assert result.get("rows") == [[2]]
         assert result.get("evidence_id")
         assert "parameters" not in result
-        assert isinstance(result.get("parameter_count"), int) and result["parameter_count"] >= 0
+        parameter_count = result.get("parameter_count")
+        assert isinstance(parameter_count, int)
+        assert parameter_count >= 0
         assert service.history()[0]["question"] == "count rows in orders"
         assert '"name": "orders"' in json.dumps(service.schema())
     finally:
