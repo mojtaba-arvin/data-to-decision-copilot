@@ -81,6 +81,12 @@ class Decision(BaseModel):
     reversal_conditions: tuple[str, ...] = ()
     caveats: tuple[str, ...] = ()
 
+    @model_validator(mode="after")
+    def validate_unique_evidence_ids(self) -> "Decision":
+        if len(self.evidence_ids) != len(set(self.evidence_ids)):
+            raise ValueError("decision evidence IDs must be unique")
+        return self
+
 
 class CopilotResponse(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -94,10 +100,76 @@ class CopilotResponse(BaseModel):
     @model_validator(mode="after")
     def validate_evidence_references(self) -> "CopilotResponse":
         evidence_ids = {item.evidence_id for item in self.evidence}
+        if len(evidence_ids) != len(self.evidence):
+            raise ValueError("response evidence IDs must be unique")
         if self.decision is not None:
             missing = set(self.decision.evidence_ids) - evidence_ids
             if missing:
                 raise ValueError(f"decision references missing evidence: {sorted(missing)}")
         if self.insufficient_data and self.decision is not None:
             raise ValueError("an insufficient-data response cannot contain a recommendation")
+        return self
+
+
+class DecisionClaim(BaseModel):
+    """One externally presented decision claim and the evidence supporting it."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    claim_id: str = Field(min_length=1)
+    statement: str = Field(min_length=1)
+    evidence_ids: tuple[str, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_unique_evidence_ids(self) -> "DecisionClaim":
+        if len(self.evidence_ids) != len(set(self.evidence_ids)):
+            raise ValueError("claim evidence IDs must be unique")
+        return self
+
+
+class EvidenceBinding(BaseModel):
+    """Immutable query and source provenance captured into a decision trace."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    evidence_id: str = Field(min_length=1)
+    query_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    result_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    source_id: str = Field(min_length=1)
+    schema_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    data_version: str | None = None
+
+
+class DecisionTrace(BaseModel):
+    """Tamper-evident snapshot linking question, planner, claims, and evidence."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    trace_id: str = Field(min_length=1)
+    question: str = Field(min_length=1)
+    planner_version: str = Field(min_length=1)
+    policy_version: str = Field(min_length=1)
+    created_at: datetime
+    decision: Decision
+    claims: tuple[DecisionClaim, ...] = Field(min_length=1)
+    evidence: tuple[EvidenceBinding, ...] = Field(min_length=1)
+    trace_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def validate_trace_references(self) -> "DecisionTrace":
+        evidence_ids = {item.evidence_id for item in self.evidence}
+        if len(evidence_ids) != len(self.evidence):
+            raise ValueError("trace evidence IDs must be unique")
+        claim_ids = [claim.claim_id for claim in self.claims]
+        if len(claim_ids) != len(set(claim_ids)):
+            raise ValueError("claim IDs must be unique")
+        claimed_ids = {item for claim in self.claims for item in claim.evidence_ids}
+        if claimed_ids - evidence_ids:
+            raise ValueError("claim references evidence absent from trace")
+        if set(self.decision.evidence_ids) != claimed_ids:
+            raise ValueError("decision evidence IDs must exactly match claim evidence")
+        if set(self.decision.evidence_ids) != evidence_ids:
+            raise ValueError("trace must contain exactly the decision evidence")
+        if self.created_at.tzinfo is None:
+            raise ValueError("trace timestamp must be timezone-aware")
         return self
