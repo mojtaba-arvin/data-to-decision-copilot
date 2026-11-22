@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
-from typing import TextIO
+from typing import TextIO, cast
 
 from d2d.application import CopilotService
 
@@ -18,9 +18,10 @@ def run_stdio(
     for line in source:
         request: object = None
         try:
-            request = json.loads(line)
-            if not isinstance(request, dict):
+            decoded: object = json.loads(line)
+            if not isinstance(decoded, dict):
                 continue
+            request = cast(dict[str, object], decoded)
             method = request.get("method")
             request_id = request.get("id")
             if method == "notifications/initialized":
@@ -54,17 +55,19 @@ def run_stdio(
                     ]
                 }
             elif method == "tools/call":
-                params = request.get("params")
-                if not isinstance(params, dict):
+                params_value = request.get("params")
+                if not isinstance(params_value, dict):
                     raise ValueError("invalid tool parameters")
+                params = cast(dict[str, object], params_value)
                 name = params.get("name")
-                arguments = params.get("arguments", {})
-                if not isinstance(arguments, dict):
+                arguments_value = params.get("arguments", {})
+                if not isinstance(arguments_value, dict):
                     raise ValueError("invalid tool arguments")
+                arguments = cast(dict[str, object], arguments_value)
                 if name == "get_schema":
                     payload: object = service.schema()
                 elif name == "query_analytics" and isinstance(arguments.get("question"), str):
-                    payload = asyncio.run(service.query(arguments["question"]))
+                    payload = asyncio.run(service.query(cast(str, arguments["question"])))
                 else:
                     raise ValueError("unknown tool or invalid arguments")
                 result = {"content": [{"type": "text", "text": json.dumps(payload, ensure_ascii=False, default=str)}]}
@@ -81,7 +84,10 @@ def run_stdio(
                 sink.write(json.dumps({"jsonrpc": "2.0", "id": request_id, "result": result}) + "\n")
                 sink.flush()
         except Exception as exc:
-            request_id = request.get("id") if isinstance(request, dict) else None
+            request_id = (
+                cast(dict[str, object], request).get("id")
+                if isinstance(request, dict) else None
+            )
             if request_id is not None:
                 sink.write(json.dumps({
                     "jsonrpc": "2.0", "id": request_id,
