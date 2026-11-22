@@ -39,6 +39,10 @@ security, request quotas, and tenant isolation.
   when the service is stopped, when its retention period ends.
 - Query history is not a substitute for the independently verified Evidence
   journal and DecisionTrace audit stores.
+- Evidence and DecisionTrace journals are append-only and currently have no
+  automatic pruning/compaction policy. Monitor disk growth and plan verified
+  archival/rotation before long-running or high-volume deployments; do not delete
+  journal rows in place because doing so invalidates sequence/hash-chain checks.
 - The Ollama adapter accepts loopback HTTP only. Model tags are descriptive
   identifiers, not cryptographic model provenance.
 
