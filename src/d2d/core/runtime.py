@@ -60,9 +60,9 @@ def _numbers_in_text(value: str) -> set[str]:
     return numbers
 
 _NEGATION = re.compile(
-    r"\\b(?:not|no|never|isn't|aren't|wasn't|weren't|doesn't|don't|didn't|"
+    r"\b(?:not|no|never|isn't|aren't|wasn't|weren't|doesn't|don't|didn't|"
     r"cannot|can't|without|false|نیست|نیستند|نبود|نبوده|نه|غیر)\\b|"
-    r"نمی(?:‌|\\s*)\\w+",
+    r"نمی(?:‌|\s*)\w+",
     re.IGNORECASE,
 )
 
@@ -80,7 +80,7 @@ def _fact_consistency_signature(statement: str) -> tuple[str, str | None, bool] 
     normalized = _NUMBER.sub(" value ", statement.casefold())
     negated = _NEGATION.search(normalized) is not None
     normalized = _NEGATION.sub(" ", normalized)
-    skeleton = " ".join(re.findall(r"\\w+", normalized))
+    skeleton = " ".join(re.findall(r"\w+", normalized))
     if not skeleton:
         return None
     return skeleton, next(iter(numbers), None), negated
