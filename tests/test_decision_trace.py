@@ -1,3 +1,4 @@
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -133,6 +134,17 @@ def test_verifier_detects_stale_schema(tmp_path: Path):
 
 def test_trace_creation_fails_when_journal_is_invalid(tmp_path: Path):
     store = SQLiteEvidenceStore(tmp_path / "evidence.sqlite")
-    evidence, _ = build_trace(store)
+    _, trace = build_trace(store)
+    with sqlite3.connect(store.path) as connection:
+        connection.execute("DROP TRIGGER evidence_no_update")
+        connection.execute("UPDATE evidence_journal SET record_sha256 = 'bad'")
+        connection.commit()
     with pytest.raises(ValueError, match="journal verification failed"):
-        store.append(evidence)
+        create_decision_trace(
+            question=trace.question,
+            decision=trace.decision,
+            claims=trace.claims,
+            planner_version="planner-1",
+            policy_version="policy-1",
+            evidence_store=store,
+        )
