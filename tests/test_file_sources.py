@@ -94,3 +94,17 @@ def test_rejects_symlink_catalog_destination(file_root: Path, tmp_path: Path) ->
         FileDataSource(
             file_root, ["orders.csv"], catalog_path=catalog_link
         ).open()
+
+
+def test_rejects_corrupt_parquet_input(file_root: Path) -> None:
+    (file_root / "broken.parquet").write_bytes(b"not-a-parquet-file")
+    with pytest.raises(FileSourceError, match="could not open file source"):
+        FileDataSource(file_root, ["broken.parquet"]).open()
+
+
+def test_rejects_malformed_csv_input(file_root: Path) -> None:
+    (file_root / "broken.csv").write_text(
+        'id,description\\n1,"unterminated field\\n', encoding="utf-8"
+    )
+    with pytest.raises(FileSourceError, match="could not open file source"):
+        FileDataSource(file_root, ["broken.csv"]).open()
