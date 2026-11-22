@@ -194,7 +194,7 @@ def test_csv_file_source_executes_through_shared_read_only_catalog(tmp_path: Pat
     root = tmp_path / "inputs"
     root.mkdir()
     (root / "orders.csv").write_text(
-        "id,amount\\n1,10.5\\n2,20.0\\n", encoding="utf-8"
+        "id,amount\n1,10.5\n2,20.0\n", encoding="utf-8"
     )
     catalog = tmp_path / "analytics.duckdb"
     with FileDataSource(root, ["orders.csv"], catalog_path=catalog) as source:
