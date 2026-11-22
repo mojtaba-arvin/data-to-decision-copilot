@@ -3,14 +3,20 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from d2d.core.contracts import Confidence, Decision, DecisionClaim
+from d2d.core.contracts import (
+    Confidence,
+    Decision,
+    DecisionClaim,
+    DecisionTrace,
+    Evidence,
+)
 from d2d.core.decision_trace import create_decision_trace, verify_decision_trace
 from d2d.core.evidence import create_execution_evidence
 from d2d.core.evidence_store import SQLiteEvidenceStore
 from d2d.core.sql_executor import QueryResult
 
 
-def make_evidence(value: int = 7):
+def make_evidence(value: int = 7) -> Evidence:
     return create_execution_evidence(
         sql=f"SELECT {value} AS value",
         dialect="duckdb",
@@ -28,7 +34,7 @@ def make_evidence(value: int = 7):
     )
 
 
-def build_trace(store: SQLiteEvidenceStore):
+def build_trace(store: SQLiteEvidenceStore) -> tuple[Evidence, DecisionTrace]:
     evidence = make_evidence()
     store.append(evidence)
     decision = Decision(
@@ -69,7 +75,7 @@ def test_trace_links_claim_decision_query_and_source(tmp_path: Path):
     assert report.evidence_checked == 1
 
 
-def test_trace_rejects_claim_without_evidence(tmp_path: Path):
+def test_trace_rejects_claim_without_evidence_binding(tmp_path: Path):
     store = SQLiteEvidenceStore(tmp_path / "evidence.sqlite")
     evidence = make_evidence()
     store.append(evidence)
@@ -95,24 +101,11 @@ def test_trace_rejects_claim_without_evidence(tmp_path: Path):
         )
 
 
-def test_trace_requires_exact_decision_claim_evidence_mapping(tmp_path: Path):
-    store = SQLiteEvidenceStore(tmp_path / "evidence.sqlite")
-    evidence, _ = build_trace(store)
-    decision = Decision(
-        action="Review stock",
-        rationale="Evidence exists.",
-        evidence_ids=(evidence.evidence_id,),
-        confidence=Confidence.LOW,
-    )
-    claim = DecisionClaim(
-        claim_id="claim-1",
-        statement="Claim cites evidence.",
-        evidence_ids=(),
-    )
-    with pytest.raises(ValidationError):
+def test_trace_rejects_empty_claim_evidence():
+    with pytest.raises(ValidationError, match="at least 1 item"):
         DecisionClaim(
             claim_id="claim-1",
-            statement="Claim cites evidence.",
+            statement="An unsupported statement.",
             evidence_ids=(),
         )
 
