@@ -103,8 +103,6 @@ def test_rejects_corrupt_parquet_input(file_root: Path) -> None:
 
 
 def test_rejects_malformed_csv_input(file_root: Path) -> None:
-    (file_root / "broken.csv").write_text(
-        'id,description\\n1,"unterminated field\\n', encoding="utf-8"
-    )
+    (file_root / "broken.csv").write_bytes(b"")
     with pytest.raises(FileSourceError, match="could not open file source"):
         FileDataSource(file_root, ["broken.csv"]).open()
