@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from d2d.core.contracts import Confidence, Decision, DecisionClaim, Evidence
+from d2d.core.contracts import Alternative, ClaimKind, Confidence, Decision, DecisionClaim, Evidence
 from d2d.core.decision_trace_store import SQLiteDecisionTraceStore
 from d2d.core.evidence import create_execution_evidence
 from d2d.core.evidence_store import SQLiteEvidenceStore
@@ -165,3 +165,130 @@ def test_policy_minimum_counts_only_decision_linked_evidence():
     )
     assert not report.allowed
     assert "insufficient decision-linked evidence records" in report.violations
+
+
+def test_fact_claim_requires_literal_value_from_linked_evidence():
+    evidence = make_evidence(7)
+    base = make_plan(evidence)
+    fact = base.claims[0].model_copy(
+        update={"kind": ClaimKind.FACT, "statement": "Observed stock level is 7 units."}
+    )
+    supported = DecisionPlan(decision=base.decision, claims=(fact,))
+    unsupported_fact = fact.model_copy(update={"statement": "Stock is critically low."})
+    unsupported = DecisionPlan(decision=base.decision, claims=(unsupported_fact,))
+    policy = DecisionPolicy(policy_id="fact-check", version="1")
+
+    assert evaluate_policy(supported, evidence=(evidence,), policy=policy).allowed
+    rejected = evaluate_policy(unsupported, evidence=(evidence,), policy=policy)
+    assert not rejected.allowed
+    assert any("literal value match" in item for item in rejected.violations)
+
+
+def test_recommendation_claim_must_match_decision_action():
+    evidence = make_evidence()
+    base = make_plan(evidence)
+    claim = base.claims[0].model_copy(
+        update={"kind": ClaimKind.RECOMMENDATION, "statement": "Increase purchasing immediately"}
+    )
+    plan = DecisionPlan(decision=base.decision, claims=(claim,))
+    report = evaluate_policy(
+        plan, evidence=(evidence,), policy=DecisionPolicy(policy_id="recommendation", version="1")
+    )
+    assert not report.allowed
+    assert any("must match the decision action" in item for item in report.violations)
+
+
+def test_high_confidence_requires_two_distinct_evidence_sources():
+    first = make_evidence(7)
+    second = make_evidence(7).model_copy(update={"source_id": "inventory"})
+    base = make_plan(first)
+    decision = base.decision.model_copy(
+        update={"evidence_ids": (first.evidence_id, second.evidence_id), "confidence": Confidence.HIGH}
+    )
+    claim = base.claims[0].model_copy(
+        update={"evidence_ids": (first.evidence_id, second.evidence_id)}
+    )
+    plan = DecisionPlan(decision=decision, claims=(claim,))
+    policy = DecisionPolicy(policy_id="calibrated", version="1")
+
+    one_source = evaluate_policy(plan, evidence=(first,), policy=policy)
+    two_sources = evaluate_policy(plan, evidence=(first, second), policy=policy)
+    assert not one_source.allowed
+    assert any("two distinct sources" in item for item in one_source.violations)
+    assert two_sources.allowed
+
+
+def test_policy_can_require_decision_alternatives_and_tradeoffs():
+    evidence = make_evidence()
+    base = make_plan(evidence)
+    policy = DecisionPolicy(
+        policy_id="options-required", version="1", require_alternatives=True
+    )
+    rejected = evaluate_policy(base, evidence=(evidence,), policy=policy)
+    assert not rejected.allowed
+    assert any("requires at least one alternative" in item for item in rejected.violations)
+
+    decision = base.decision.model_copy(
+        update={
+            "alternatives": (
+                Alternative(
+                    action="Defer replenishment",
+                    trade_off="Preserves cash but increases stockout risk.",
+                ),
+            )
+        }
+    )
+    accepted = evaluate_policy(
+        DecisionPlan(decision=decision, claims=base.claims),
+        evidence=(evidence,),
+        policy=policy,
+    )
+    assert accepted.allowed
+
+
+def test_decision_rejects_alternative_that_duplicates_primary_action():
+    evidence = make_evidence()
+    base = make_plan(evidence)
+    with pytest.raises(ValueError, match="must not duplicate"):
+        Decision.model_validate(
+            {
+                **base.decision.model_dump(),
+                "alternatives": (
+                    {
+                        "action": base.decision.action,
+                        "trade_off": "No meaningful difference.",
+                    },
+                ),
+            }
+        )
+
+
+@pytest.mark.parametrize(
+    ("value", "statement"),
+    [
+        ("north", "The region is north."),
+        (True, "The control is true."),
+    ],
+)
+def test_fact_claim_matches_string_and_boolean_literals(value: object, statement: str):
+    evidence = make_evidence().model_copy(update={"rows": ((value,),)})
+    base = make_plan(evidence, statement=statement)
+    fact = base.claims[0].model_copy(update={"kind": ClaimKind.FACT})
+    plan = DecisionPlan(decision=base.decision, claims=(fact,))
+    report = evaluate_policy(
+        plan, evidence=(evidence,), policy=DecisionPolicy(policy_id="literal-values", version="1")
+    )
+    assert report.allowed, report.violations
+
+
+def test_fact_string_grounding_requires_token_boundaries():
+    evidence = make_evidence().model_copy(update={"rows": (("north",),)})
+    base = make_plan(evidence, statement="The region is northwest.")
+    fact = base.claims[0].model_copy(update={"kind": ClaimKind.FACT})
+    report = evaluate_policy(
+        DecisionPlan(decision=base.decision, claims=(fact,)),
+        evidence=(evidence,),
+        policy=DecisionPolicy(policy_id="token-boundary", version="1"),
+    )
+    assert not report.allowed
+    assert any("literal value match" in item for item in report.violations)
