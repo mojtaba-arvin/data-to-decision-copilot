@@ -36,3 +36,7 @@ warm-up before measuring the end-to-end path and verifies that the count result
 matches the generated dataset. Results are local regression measurements, not
 cross-machine performance guarantees. Increase rows and iterations to explore
 resource behavior; do not run untrusted datasets without OS-level isolation.
+
+The JSON report also records the platform, Python version, total process CPU time,
+and the configured DuckDB memory/thread limits. It does not claim to measure
+process-wide peak RSS or provide a cross-machine memory benchmark.
