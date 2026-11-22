@@ -36,26 +36,29 @@ def main(argv: Sequence[str] | None = None) -> int:
         provider=args.provider,
         model=args.model,
     )
-    if args.command == "query":
-        result = asyncio.run(service.query(args.question))
-        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
-        return 0
-    if args.command == "schema":
-        print(json.dumps(service.schema(), ensure_ascii=False, indent=2))
-        return 0
-    if args.command == "mcp":
-        run_stdio(service)
-        return 0
-    if args.command == "serve":
-        server = create_server(service, host=args.host, port=args.port)
-        try:
-            print(f"REST API listening on http://{args.host}:{args.port}")
-            server.serve_forever()
-        except KeyboardInterrupt:
-            pass
-        finally:
-            server.server_close()
-        return 0
+    try:
+        if args.command == "query":
+            result = asyncio.run(service.query(args.question))
+            print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+            return 0
+        if args.command == "schema":
+            print(json.dumps(service.schema(), ensure_ascii=False, indent=2))
+            return 0
+        if args.command == "mcp":
+            run_stdio(service)
+            return 0
+        if args.command == "serve":
+            server = create_server(service, host=args.host, port=args.port)
+            try:
+                print(f"REST API listening on http://{args.host}:{args.port}")
+                server.serve_forever()
+            except KeyboardInterrupt:
+                pass
+            finally:
+                server.server_close()
+            return 0
+    finally:
+        service.close()
     return 2
 
 
