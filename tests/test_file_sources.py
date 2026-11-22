@@ -6,6 +6,7 @@ import pytest
 from d2d.connectors.base import DataSource, DiscoveryLimits
 from d2d.connectors.files import FileDataSource, FileSourceError
 
+
 @pytest.fixture
 def file_root(tmp_path: Path) -> Path:
     (tmp_path / "orders.csv").write_text("id,amount\n1,10.5\n2,20.0\n", encoding="utf-8")
