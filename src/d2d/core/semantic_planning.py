@@ -24,7 +24,7 @@ class SemanticPlanningError(ValueError):
 
 def _normalize_question(question: str) -> str:
     """Translate a small explicit Persian phrase grammar; identifiers stay schema-grounded."""
-    text = question.strip().replace("ي", "ی").replace("ك", "ک").replace("\u200c", " ")
+    text = question.strip().replace("ي", "ی").replace("ك", "ک").replace("\u200c", "")
     text = " ".join(text.split()).rstrip("؟?!.")
 
     patterns = (
