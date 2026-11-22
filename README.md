@@ -2,7 +2,7 @@
 
 An open-source, read-only analytics copilot that turns natural-language questions into evidence-backed answers and explicit decision recommendations.
 
-> Status: early development. The current milestone establishes the Python core contracts and SQL safety boundary; it is not yet a production-ready analytics agent.
+> Status: active integration. The local core, semantic planning, evidence/decision journals, CLI, REST, MCP, and browser UI are implemented behind a read-only boundary. It is not yet production-ready for remote or untrusted workloads.
 
 ## Design principles
 - **Evidence before explanation:** every reported metric must trace to an executed query or a recorded deterministic calculation.
@@ -62,10 +62,65 @@ planner = ModelBackedQueryPlanner(
 ```
 The configured tag is descriptive metadata, not a cryptographic model digest. The adapter only accepts loopback HTTP and does not download models or retry failed requests. Automated CI tests mock HTTP and do not claim real inference.
 
+## Local interfaces
+
+Install the package in editable mode, then use the `d2d` command:
+
+```bash
+uv sync --all-groups
+d2d schema --catalog ./analytics.duckdb
+d2d query --catalog ./analytics.duckdb --question "count rows in orders"
+d2d query --catalog ./analytics.duckdb --provider ollama --model qwen3:8b --question "تعداد ردیف‌ها در orders"
+d2d serve --catalog ./analytics.duckdb --host 127.0.0.1 --port 8765
+d2d mcp --catalog ./analytics.duckdb
+```
+
+The REST API exposes `GET /health`, `GET /v1/schema`, `GET /v1/history`, and
+`POST /v1/query` with a JSON `question` field. The API binds to loopback only
+because authentication and remote access controls are not part of this milestone.
+The MCP stdio server exposes `query_analytics` and `get_schema`; both call the
+same typed QueryPlanningRuntime and cannot execute arbitrary SQL.
+
+Serve `ui/index.html` from the same origin as the REST API (or configure a local
+reverse proxy) to use the lightweight browser interface. It displays query results,
+bounded execution metadata, the evidence identifier, schema fingerprint, planner
+identity, and recent query history. Query history is stored in a bounded local SQLite
+database and survives service restarts; it stores the question and evidence metadata,
+not result rows or raw SQL bind values. Questions themselves may contain sensitive
+information, so protect the history database and apply the documented retention policy.
+Decision traces remain a separate audit layer.
+
+The CLI, REST, and MCP interfaces share one service implementation. The default
+planner is the deterministic Persian/English grammar; `--provider ollama` opts
+into the local structured-plan provider. All query paths remain read-only and
+use the same schema validation, SQL AST guard, resource-bounded executor, and
+execution-derived Evidence journal.
+
 ## Security boundary
 SQL validation is defense in depth, not a replacement for database-enforced read-only credentials, OS-level isolation, or network policy. The DuckDB memory ceiling is not an OS process sandbox. Never connect this project to production using a privileged account.
 
-Journal limitations and operating guidance are documented in [Spec 0007](docs/specs/0007-evidence-journal.md) and [ADR 0007](docs/adr/0007-evidence-journal.md). Decision lineage and verification are specified in [Spec 0008](docs/specs/0008-decision-traceability.md) and [ADR 0008](docs/adr/0008-decision-traceability.md). Durable trace storage and historical replay are specified in [Spec 0009](docs/specs/0009-decision-trace-persistence.md) and [ADR 0009](docs/adr/0009-decision-trace-persistence.md). Planner orchestration and policy enforcement are specified in [Spec 0010](docs/specs/0010-planner-runtime-policy.md) and [ADR 0010](docs/adr/0010-planner-runtime-policy.md). Schema-grounded query planning is specified in [Spec 0011](docs/specs/0011-schema-grounded-query-planning.md) and [ADR 0011](docs/adr/0011-typed-query-plan-boundary.md). Constrained offline semantic planning and explicit query-to-decision integration are specified in [Spec 0012](docs/specs/0012-constrained-semantic-planning.md) and [ADR 0012](docs/adr/0012-constrained-semantic-planning.md). The model-to-typed-query-plan boundary is specified in [Spec 0013](docs/specs/0013-model-query-planner-boundary.md) and [ADR 0013](docs/adr/0013-model-query-planner-boundary.md). The local Ollama structured-plan provider is specified in [Spec 0014](docs/specs/0014-ollama-provider.md) and [ADR 0014](docs/adr/0014-ollama-provider.md).
+Journal limitations and operating guidance are documented in [Spec 0007](docs/specs/0007-evidence-journal.md) and [ADR 0007](docs/adr/0007-evidence-journal.md). Decision lineage and verification are specified in [Spec 0008](docs/specs/0008-decision-traceability.md) and [ADR 0008](docs/adr/0008-decision-traceability.md). Durable trace storage and historical replay are specified in [Spec 0009](docs/specs/0009-decision-trace-persistence.md) and [ADR 0009](docs/adr/0009-decision-trace-persistence.md). Planner orchestration and policy enforcement are specified in [Spec 0010](docs/specs/0010-planner-runtime-policy.md) and [ADR 0010](docs/adr/0010-planner-runtime-policy.md). Schema-grounded query planning is specified in [Spec 0011](docs/specs/0011-schema-grounded-query-planning.md) and [ADR 0011](docs/adr/0011-typed-query-plan-boundary.md). Constrained offline semantic planning and explicit query-to-decision integration are specified in [Spec 0012](docs/specs/0012-constrained-semantic-planning.md) and [ADR 0012](docs/adr/0012-constrained-semantic-planning.md). The model-to-typed-query-plan boundary is specified in [Spec 0013](docs/specs/0013-model-query-planner-boundary.md) and [ADR 0013](docs/adr/0013-model-query-planner-boundary.md). The local Ollama structured-plan provider is specified in [Spec 0014](docs/specs/0014-ollama-provider.md) and [ADR 0014](docs/adr/0014-ollama-provider.md). Offline wheelhouse preparation and local model deployment are documented in [Offline Installation](docs/offline-install.md).
+
+## Quality and security checks
+
+```bash
+uv run pytest tests/test_benchmark.py -q
+uv run pytest --cov=d2d --cov-report=term-missing
+uv run --with pip-audit pip-audit --skip-editable
+uv build
+```
+
+The benchmark uses exact QueryPlan matches for a small Persian/English grammar;
+it is not a claim of general NL-to-SQL accuracy. Prompt-injection and SQL bypass
+regressions run in normal CI. Dependency vulnerability auditing and wheel/sdist
+build checks are also CI gates. See [SECURITY.md](SECURITY.md) for trust boundaries,
+deployment constraints, and known limitations.
+
+## Examples and release
+
+A synthetic sales catalog and runnable query walkthrough are available in
+[examples/](examples/README.md). Use [the release checklist](docs/release-checklist.md)
+to verify the exact candidate commit before publishing artifacts.
 
 ## License
 MIT. See [LICENSE](LICENSE).
