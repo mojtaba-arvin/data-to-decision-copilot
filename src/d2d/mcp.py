@@ -24,10 +24,11 @@ def run_stdio(
             request = cast(dict[str, object], decoded)
             method = request.get("method")
             request_id = request.get("id")
+            result: object = None
             if method == "notifications/initialized":
                 continue
             if method == "initialize":
-                result: object = {
+                result = {
                     "protocolVersion": "2025-03-26",
                     "capabilities": {"tools": {}},
                     "serverInfo": {"name": "data-to-decision-copilot", "version": "0.1.0"},
@@ -84,10 +85,7 @@ def run_stdio(
                 sink.write(json.dumps({"jsonrpc": "2.0", "id": request_id, "result": result}) + "\n")
                 sink.flush()
         except Exception as exc:
-            request_id = (
-                cast(dict[str, object], request).get("id")
-                if isinstance(request, dict) else None
-            )
+            request_id = request.get("id") if isinstance(request, dict) else None
             if request_id is not None:
                 sink.write(json.dumps({
                     "jsonrpc": "2.0", "id": request_id,
