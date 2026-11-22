@@ -1,11 +1,21 @@
 """Bounded, read-only CSV and Parquet file discovery."""
 from __future__ import annotations
+
 import hashlib
 import json
 from pathlib import Path, PurePath
 from typing import Self
+
 import duckdb
-from d2d.connectors.base import ColumnInfo, DataSource, DiscoveryLimits, SchemaSnapshot, TableInfo, TableSchema
+
+from d2d.connectors.base import (
+    ColumnInfo,
+    DataSource,
+    DiscoveryLimits,
+    SchemaSnapshot,
+    TableInfo,
+    TableSchema,
+)
 
 class FileSourceError(RuntimeError):
     """Raised when a file source violates policy or cannot be inspected."""
