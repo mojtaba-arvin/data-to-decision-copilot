@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   quality:
     runs-on: ubuntu-latest
@@ -17,6 +21,9 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
@@ -28,3 +35,41 @@ jobs:
         run: uv run pyright
       - name: Tests
         run: uv run pytest --cov=d2d --cov-report=term-missing
+
+  real_ollama_smoke:
+    # Only Phase 13's provider PR pays the model download/inference cost.
+    if: github.event_name == 'pull_request' && github.event.pull_request.number == 14
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install Ollama
+        run: curl -fsSL https://ollama.com/install.sh | sh
+      - name: Start local Ollama daemon
+        run: |
+          nohup ollama serve >/tmp/ollama.log 2>&1 &
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:11434/api/tags >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          cat /tmp/ollama.log
+          exit 1
+      - name: Pull local model
+        run: ollama pull qwen3:8b
+      - name: Install project
+        run: uv sync --all-groups
+      - name: Real model to guarded query smoke
+        env:
+          D2D_OLLAMA_MODEL: qwen3:8b
+        run: uv run python scripts/ollama_smoke.py
