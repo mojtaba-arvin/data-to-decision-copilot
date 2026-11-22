@@ -11,8 +11,13 @@ from d2d.connectors.base import SchemaSnapshot, TableSchema
 from d2d.core.decision_trace_store import SQLiteDecisionTraceStore
 from d2d.core.evidence_store import SQLiteEvidenceStore
 from d2d.core.query_planning import (
-    AggregateFunction, AggregateSpec, QueryPlan, QueryPlanner,
-    QueryPlannerIdentity, QueryPlanningResult, QueryPlanningRuntime,
+    AggregateFunction,
+    AggregateSpec,
+    QueryPlan,
+    QueryPlanner,
+    QueryPlannerIdentity,
+    QueryPlanningResult,
+    QueryPlanningRuntime,
 )
 from d2d.core.runtime import DecisionPolicy, DecisionRuntime, RuntimeResult
 from d2d.core.runtime import Planner as DecisionPlanner
