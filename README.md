@@ -18,6 +18,8 @@ The first implementation milestone is deliberately small:
 
 - Typed decision and evidence contracts (Pydantic v2).
 - AST-based SQL validation using SQLGlot (no regex-based SQL security).
+- Read-only DuckDB catalog discovery for persistent database files.
+- Table/view and column metadata plus deterministic schema fingerprints.
 - Deterministic unit tests that do not call an LLM or access a network.
 
 Planner, executor, verifier, connectors, API, MCP server, UI, and benchmark suites will be added behind these contracts in subsequent milestones.
