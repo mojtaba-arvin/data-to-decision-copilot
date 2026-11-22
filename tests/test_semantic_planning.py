@@ -165,3 +165,128 @@ def test_query_to_decision_bridge_requires_explicit_decision_planner(
         assert trace_store.count() == 1
     finally:
         source.close()
+
+
+def test_rule_planner_supports_persian_count_aggregate_and_projection(database: Path) -> None:
+    with DuckDBConnector(database) as source:
+        snapshot = source.snapshot()
+    planner = RuleBasedSemanticPlanner()
+    assert planner.plan("تعداد ردیف‌ها در orders", snapshot) == planner.plan(
+        "count rows in orders", snapshot
+    )
+    assert planner.plan("مجموع amount به تفکیک region در orders", snapshot) == planner.plan(
+        "sum amount by region in orders", snapshot
+    )
+    assert planner.plan("میانگین amount در orders", snapshot) == planner.plan(
+        "average amount in orders", snapshot
+    )
+    assert planner.plan("نمایش id, region از orders", snapshot) == planner.plan(
+        "show id, region from orders", snapshot
+    )
+
+
+def test_persian_normalization_handles_zero_width_joiner(database: Path) -> None:
+    with DuckDBConnector(database) as source:
+        snapshot = source.snapshot()
+    plan = RuleBasedSemanticPlanner().plan("تعداد ردیف\u200cها در orders؟", snapshot)
+    assert plan.aggregates[0].function.value == "count"
+
+
+def test_persian_unknown_or_ambiguous_request_fails_closed(database: Path) -> None:
+    with DuckDBConnector(database) as source:
+        snapshot = source.snapshot()
+    with pytest.raises(SemanticPlanningError):
+        RuleBasedSemanticPlanner().plan("تعداد مشتریان در orders", snapshot)
+
+
+def test_semantic_layer_resolves_business_table_and_field_aliases(database: Path) -> None:
+    from d2d.core.semantic_layer import (
+        SemanticField,
+        SemanticFieldKind,
+        SemanticLayer,
+        SemanticTable,
+    )
+
+    with DuckDBConnector(database) as source:
+        snapshot = source.snapshot()
+    layer = SemanticLayer(
+        version="finance-v1",
+        tables=(
+            SemanticTable(
+                name="sales",
+                physical_table="orders",
+                synonyms=("transactions",),
+                fields=(
+                    SemanticField(
+                        name="revenue", physical_column="amount",
+                        kind=SemanticFieldKind.METRIC, synonyms=("sales amount",),
+                        unit="USD",
+                    ),
+                    SemanticField(
+                        name="territory", physical_column="region",
+                        kind=SemanticFieldKind.DIMENSION, synonyms=("market",),
+                    ),
+                ),
+            ),
+        ),
+    )
+    planner = RuleBasedSemanticPlanner(semantic_layer=layer)
+    semantic_plan = planner.plan("sum revenue by territory in sales", snapshot)
+    physical_plan = RuleBasedSemanticPlanner().plan(
+        "sum amount by region in orders", snapshot
+    )
+    assert semantic_plan == physical_plan
+    assert planner.identity.artifact_sha256 != RuleBasedSemanticPlanner().identity.artifact_sha256
+
+
+def test_semantic_layer_rejects_ambiguous_business_aliases(database: Path) -> None:
+    from d2d.core.semantic_layer import (
+        SemanticField,
+        SemanticFieldKind,
+        SemanticLayer,
+        SemanticTable,
+    )
+
+    with DuckDBConnector(database) as source:
+        snapshot = source.snapshot()
+    layer = SemanticLayer(
+        version="ambiguous-v1",
+        tables=(
+            SemanticTable(
+                name="orders", physical_table="orders",
+                fields=(
+                    SemanticField(
+                        name="revenue", physical_column="amount",
+                        kind=SemanticFieldKind.METRIC, synonyms=("sales",),
+                    ),
+                    SemanticField(
+                        name="net revenue", physical_column="net_amount",
+                        kind=SemanticFieldKind.METRIC, synonyms=("sales",),
+                    ),
+                ),
+            ),
+        ),
+    )
+    with pytest.raises(ValueError, match="ambiguous semantic field"):
+        RuleBasedSemanticPlanner(semantic_layer=layer).plan(
+            "sum sales in orders", snapshot
+        )
+
+
+def test_persian_arabic_yeh_kaf_variants_are_normalized(database: Path) -> None:
+    with DuckDBConnector(database) as source:
+        snapshot = source.snapshot()
+    planner = RuleBasedSemanticPlanner()
+    arabic_letters = planner.plan("ميانگين amount در orders", snapshot)
+    canonical = planner.plan("average amount in orders", snapshot)
+    assert arabic_letters == canonical
+
+
+def test_projection_rejects_duplicate_columns_and_unknown_identifiers(database: Path) -> None:
+    with DuckDBConnector(database) as source:
+        snapshot = source.snapshot()
+    planner = RuleBasedSemanticPlanner()
+    with pytest.raises(SemanticPlanningError, match="unique"):
+        planner.plan("show id, id from orders", snapshot)
+    with pytest.raises(SemanticPlanningError, match="unknown"):
+        planner.plan("show missing_column from orders", snapshot)
