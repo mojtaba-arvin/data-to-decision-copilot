@@ -20,6 +20,7 @@ from d2d.core.sql_guard import validate_read_only_sql
 _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _MAX_LIMIT = 1_000
 _MAX_FILTER_VALUES = 100
+QueryScalar = str | int | float | bool
 
 
 class QueryPlanningError(ValueError):
@@ -57,7 +58,7 @@ class QueryFilter(BaseModel):
 
     column: str = Field(min_length=1)
     operator: FilterOperator
-    value: object | None = None
+    value: QueryScalar | tuple[QueryScalar, ...] | list[QueryScalar] | None = None
 
     @model_validator(mode="after")
     def validate_value(self) -> QueryFilter:
