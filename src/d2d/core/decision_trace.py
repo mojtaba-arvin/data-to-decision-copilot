@@ -7,22 +7,24 @@ import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Protocol, Any
+from typing import Any, Protocol
 
 from d2d.core.contracts import (
     Decision,
     DecisionClaim,
     DecisionTrace,
+    Evidence,
     EvidenceBinding,
 )
+from d2d.core.evidence_store import VerificationReport
 
 
 class EvidenceStore(Protocol):
     """Minimal read-only surface required to build or verify a decision trace."""
 
-    def get(self, evidence_id: str): ...
+    def get(self, evidence_id: str) -> Evidence | None: ...
 
-    def verify(self): ...
+    def verify(self) -> VerificationReport: ...
 
 
 @dataclass(frozen=True, slots=True)
