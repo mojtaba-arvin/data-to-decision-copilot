@@ -16,6 +16,7 @@ from d2d.core.contracts import (
     Confidence,
     Decision,
     DecisionClaim,
+    DecisionTrace,
     Evidence,
 )
 from d2d.core.decision_trace import EvidenceStore, create_decision_trace
