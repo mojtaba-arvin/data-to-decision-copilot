@@ -5,6 +5,7 @@ read-only principal and enforce execution/resource limits.
 """
 
 from dataclasses import dataclass
+from typing import cast
 
 import sqlglot
 from sqlglot import exp
@@ -40,7 +41,7 @@ def validate_read_only_sql(sql: str, dialect: str = "") -> ValidatedQuery:
         raise SQLValidationError("SQL must not be empty")
 
     try:
-        statements = sqlglot.parse(sql, read=dialect or None)
+        statements = cast(list[exp.Expression | None], sqlglot.parse(sql, read=dialect or None))
     except (ParseError, ValueError) as exc:
         raise SQLValidationError(f"SQL could not be parsed: {exc}") from exc
 
@@ -64,4 +65,7 @@ def validate_read_only_sql(sql: str, dialect: str = "") -> ValidatedQuery:
             if function_name in _FORBIDDEN_FUNCTIONS:
                 raise SQLValidationError(f"forbidden SQL function: {function_name}")
 
-    return ValidatedQuery(sql=tree.sql(dialect=dialect or None), dialect=dialect or "generic")
+    return ValidatedQuery(
+        sql=cast(str, tree.sql(dialect=dialect or None)),
+        dialect=dialect or "generic",
+    )
