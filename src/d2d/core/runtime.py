@@ -13,6 +13,7 @@ from typing import Protocol
 from pydantic import BaseModel, ConfigDict, Field
 
 from d2d.core.contracts import (
+    ClaimKind,
     Confidence,
     Decision,
     DecisionClaim,
@@ -57,6 +58,28 @@ def _numbers_in_text(value: str) -> set[str]:
         except InvalidOperation:
             continue
     return numbers
+
+def _literal_value_in_statement(value: object, statement: str) -> bool:
+    """Check literal value grounding for FACT claims, not semantic entailment."""
+    numeric: Decimal | None = None
+    if isinstance(value, (int, float, Decimal)) and not isinstance(value, bool):
+        try:
+            numeric = Decimal(str(value)).normalize()
+        except InvalidOperation:
+            numeric = None
+    elif isinstance(value, str):
+        try:
+            numeric = Decimal(value.strip().replace(",", "")).normalize()
+        except InvalidOperation:
+            numeric = None
+    if numeric is not None:
+        return format(numeric, "f") in _numbers_in_text(statement)
+    if isinstance(value, str) and len(value.strip()) >= 2:
+        token = re.escape(value.strip())
+        return re.search(rf"(?<!\w){token}(?!\w)", statement, re.IGNORECASE) is not None
+    if isinstance(value, bool):
+        return re.search(rf"\b{str(value).lower()}\b", statement, re.IGNORECASE) is not None
+    return False
 
 
 class PlannerIdentity(BaseModel):
@@ -144,6 +167,7 @@ class DecisionPolicy(BaseModel):
     )
     reject_truncated_evidence: bool = True
     require_reversal_conditions: bool = False
+    require_alternatives: bool = False
 
     @property
     def definition_sha256(self) -> str:
@@ -190,6 +214,8 @@ def evaluate_policy(
         violations.append(f"confidence level is not allowed: {decision.confidence.value}")
     if policy.require_reversal_conditions and not decision.reversal_conditions:
         violations.append("decision requires at least one reversal condition")
+    if policy.require_alternatives and not decision.alternatives:
+        violations.append("decision requires at least one alternative with a trade-off")
 
     claim_ids = [claim.claim_id for claim in plan.claims]
     if len(claim_ids) != len(set(claim_ids)):
@@ -206,6 +232,28 @@ def evaluate_policy(
     usable = [by_id[item] for item in referenced if item in by_id]
     if policy.reject_truncated_evidence and any(item.truncated for item in usable):
         violations.append("truncated evidence is not allowed by this policy")
+    if decision.confidence is Confidence.HIGH:
+        independent_sources = {item.source_id for item in usable if item.source_id}
+        if len(independent_sources) < 2:
+            violations.append(
+                "high confidence requires corroborating evidence from at least two distinct sources"
+            )
+
+    for claim in plan.claims:
+        linked = [by_id[item] for item in claim.evidence_ids if item in by_id]
+        if claim.kind is ClaimKind.FACT:
+            values = (value for item in linked for row in item.rows for value in row)
+            if not any(_literal_value_in_statement(value, claim.statement) for value in values):
+                violations.append(
+                    f"fact claim {claim.claim_id} has no literal value match in its linked evidence"
+                )
+        elif (
+            claim.kind is ClaimKind.RECOMMENDATION
+            and claim.statement.strip().casefold() != decision.action.strip().casefold()
+        ):
+                violations.append(
+                    f"recommendation claim {claim.claim_id} must match the decision action"
+                )
 
     numeric_values = {
         number
