@@ -2,21 +2,28 @@ name: CI
 
 on:
   push:
-    branches: [main, "work/**"]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  quality:
+  quality-and-release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
@@ -26,5 +33,11 @@ jobs:
         run: uv run ruff check .
       - name: Pyright
         run: uv run pyright
-      - name: Tests
+      - name: Tests and coverage
         run: uv run pytest --cov=d2d --cov-report=term-missing
+      - name: Dependency vulnerability audit
+        run: uv run --with pip-audit pip-audit --skip-editable
+      - name: Build wheel and source distribution
+        run: uv build
+      - name: Installed wheel CLI smoke test
+        run: uv run --no-project --with dist/*.whl d2d --help
