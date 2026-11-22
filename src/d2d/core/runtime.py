@@ -167,6 +167,7 @@ class DecisionPolicy(BaseModel):
     )
     reject_truncated_evidence: bool = True
     require_reversal_conditions: bool = False
+    require_alternatives: bool = False
 
     @property
     def definition_sha256(self) -> str:
@@ -213,6 +214,8 @@ def evaluate_policy(
         violations.append(f"confidence level is not allowed: {decision.confidence.value}")
     if policy.require_reversal_conditions and not decision.reversal_conditions:
         violations.append("decision requires at least one reversal condition")
+    if policy.require_alternatives and not decision.alternatives:
+        violations.append("decision requires at least one alternative with a trade-off")
 
     claim_ids = [claim.claim_id for claim in plan.claims]
     if len(claim_ids) != len(set(claim_ids)):
