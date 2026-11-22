@@ -179,8 +179,8 @@ def evaluate_policy(
     decision = plan.decision
     referenced = set(decision.evidence_ids)
 
-    if len(evidence) < policy.min_evidence:
-        violations.append("insufficient evidence records")
+    if len(referenced) < policy.min_evidence:
+        violations.append("insufficient decision-linked evidence records")
     if not referenced:
         violations.append("decision must reference at least one evidence record")
     missing = referenced - set(by_id)
