@@ -209,12 +209,6 @@ def evaluate_semantic_planner(
     return EvaluationReport(total=len(cases), passed=passed, rejected=rejected)
 
 
-class DecisionStage(Protocol):
-    """Explicit decision proposal stage; it receives persisted evidence only."""
-
-    def run(self, *, question: str, evidence_ids: tuple[str, ...]) -> RuntimeResult: ...
-
-
 @dataclass(frozen=True, slots=True)
 class QueryDecisionResult:
     query: QueryPlanningResult
