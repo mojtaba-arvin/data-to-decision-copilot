@@ -59,7 +59,7 @@ class FileDataSource:
         self._limits = limits or DiscoveryLimits()
         self._connection: duckdb.DuckDBPyConnection | None = None
         self._tables: tuple[TableInfo, ...] = ()
-        self._snapshot_dir: tempfile.TemporaryDirectory | None = None
+        self._snapshot_dir: tempfile.TemporaryDirectory[str] | None = None
 
     def __enter__(self) -> Self:
         return self.open()
@@ -70,7 +70,7 @@ class FileDataSource:
     def open(self) -> Self:
         if self._connection is not None:
             return self
-        snapshot_dir: tempfile.TemporaryDirectory | None = None
+        snapshot_dir: tempfile.TemporaryDirectory[str] | None = None
         try:
             if self._root_input.is_symlink():
                 raise FileSourceError("source root must not be a symlink")
