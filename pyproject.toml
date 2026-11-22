@@ -13,6 +13,7 @@ authors = [{ name = "Data-to-Decision Copilot contributors" }]
 dependencies = [
   "pydantic>=2.10,<3",
   "sqlglot>=26,<29",
+  "duckdb>=1.2,<2",
 ]
 
 [dependency-groups]
