@@ -60,7 +60,7 @@ class QueryFilter(BaseModel):
     value: object | None = None
 
     @model_validator(mode="after")
-    def validate_value(self) -> "QueryFilter":
+    def validate_value(self) -> QueryFilter:
         if self.operator in {FilterOperator.IS_NULL, FilterOperator.IS_NOT_NULL}:
             if self.value is not None:
                 raise ValueError("null operators must not include a value")
@@ -84,7 +84,7 @@ class AggregateSpec(BaseModel):
     alias: str = Field(min_length=1)
 
     @model_validator(mode="after")
-    def validate_target(self) -> "AggregateSpec":
+    def validate_target(self) -> AggregateSpec:
         if self.function is AggregateFunction.COUNT and self.column is None:
             return self
         if self.column is None:
@@ -115,7 +115,7 @@ class QueryPlan(BaseModel):
     limit: int = Field(default=100, ge=1, le=_MAX_LIMIT)
 
     @model_validator(mode="after")
-    def validate_shape(self) -> "QueryPlan":
+    def validate_shape(self) -> QueryPlan:
         if not self.columns and not self.aggregates:
             raise ValueError("query plan must select at least one column or aggregate")
         if len(self.columns) != len(set(self.columns)):
@@ -126,8 +126,8 @@ class QueryPlan(BaseModel):
             raise ValueError("aggregate aliases must be unique")
         if set(self.group_by) - set(self.columns):
             raise ValueError("group_by columns must also be selected")
-        if self.aggregates and self.columns and not self.group_by:
-            raise ValueError("non-aggregate columns require GROUP BY when aggregates are present")
+        if self.aggregates and set(self.columns) != set(self.group_by):
+            raise ValueError("every non-aggregate selected column must be included in GROUP BY")
         return self
 
 
@@ -192,7 +192,10 @@ def compile_query_plan(
             f"{aggregate.function.value.upper()}({target}) AS {_quote_identifier(aggregate.alias)}"
         )
 
-    table_ref = f"{_quote_identifier(plan.schema_name)}.{_quote_identifier(plan.table_name)}"
+    table_ref = (
+        f"{_quote_identifier(table.table.catalog)}."
+        f"{_quote_identifier(plan.schema_name)}.{_quote_identifier(plan.table_name)}"
+    )
     sql = f"SELECT {', '.join(projections)} FROM {table_ref}"
     parameters: list[object] = []
     if plan.filters:
