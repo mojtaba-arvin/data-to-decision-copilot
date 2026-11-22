@@ -5,7 +5,9 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import platform
 import statistics
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -33,6 +35,7 @@ def main() -> int:
     if args.rows < 1 or args.iterations < 2:
         parser.error("--rows must be positive and --iterations must be at least 2")
 
+    cpu_started = time.process_time()
     with tempfile.TemporaryDirectory(prefix="d2d-benchmark-") as directory:
         root = Path(directory)
         database = root / "benchmark.duckdb"
@@ -87,6 +90,11 @@ def main() -> int:
             "rows": args.rows,
             "iterations": args.iterations,
             "units": "milliseconds",
+            "platform": platform.platform(),
+            "python": sys.version.split()[0],
+            "process_cpu_seconds": round(time.process_time() - cpu_started, 3),
+            "duckdb_memory_limit": "256MB",
+            "duckdb_threads": 1,
             "schema_discovery": {
                 "median": round(statistics.median(schema_samples), 3),
                 "p95": round(percentile(schema_samples, 0.95), 3),
