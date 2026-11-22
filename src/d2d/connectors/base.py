@@ -62,9 +62,12 @@ class DataSource(Protocol):
 
     def list_tables(self, *, include_views: bool = False) -> tuple[TableInfo, ...]:
         """Return discovered relations, subject to configured limits."""
+        ...
 
     def describe_table(self, schema: str, table: str) -> TableSchema:
         """Return ordered metadata for one relation."""
+        ...
 
     def snapshot(self, *, include_views: bool = False) -> SchemaSnapshot:
         """Return a deterministic schema snapshot."""
+        ...
