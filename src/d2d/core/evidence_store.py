@@ -9,7 +9,6 @@ from typing import Any
 
 from d2d.core.contracts import Evidence, EvidenceStatus
 
-
 SCHEMA_VERSION = 1
 GENESIS = "0" * 64
 
