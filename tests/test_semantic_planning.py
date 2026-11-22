@@ -165,3 +165,35 @@ def test_query_to_decision_bridge_requires_explicit_decision_planner(
         assert trace_store.count() == 1
     finally:
         source.close()
+
+
+def test_rule_planner_supports_persian_count_aggregate_and_projection(database: Path) -> None:
+    with DuckDBConnector(database) as source:
+        snapshot = source.snapshot()
+    planner = RuleBasedSemanticPlanner()
+    assert planner.plan("تعداد ردیف‌ها در orders", snapshot) == planner.plan(
+        "count rows in orders", snapshot
+    )
+    assert planner.plan("مجموع amount به تفکیک region در orders", snapshot) == planner.plan(
+        "sum amount by region in orders", snapshot
+    )
+    assert planner.plan("میانگین amount در orders", snapshot) == planner.plan(
+        "average amount in orders", snapshot
+    )
+    assert planner.plan("نمایش id, region از orders", snapshot) == planner.plan(
+        "show id, region from orders", snapshot
+    )
+
+
+def test_persian_normalization_handles_zero_width_joiner(database: Path) -> None:
+    with DuckDBConnector(database) as source:
+        snapshot = source.snapshot()
+    plan = RuleBasedSemanticPlanner().plan("تعداد ردیف\u200cها در orders؟", snapshot)
+    assert plan.aggregates[0].function.value == "count"
+
+
+def test_persian_unknown_or_ambiguous_request_fails_closed(database: Path) -> None:
+    with DuckDBConnector(database) as source:
+        snapshot = source.snapshot()
+    with pytest.raises(SemanticPlanningError):
+        RuleBasedSemanticPlanner().plan("تعداد مشتریان در orders", snapshot)
