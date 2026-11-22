@@ -88,25 +88,31 @@ def test_table_limit_fails_closed(database_path: Path) -> None:
     connection = duckdb.connect(str(database_path))
     connection.execute("CREATE TABLE second_table (id INTEGER)")
     connection.close()
-    with DuckDBConnector(database_path, limits=DiscoveryLimits(max_tables=1)) as source:
-        with pytest.raises(DuckDBConnectorError, match="max_tables=1"):
-            source.list_tables()
+    with (
+        DuckDBConnector(database_path, limits=DiscoveryLimits(max_tables=1)) as source,
+        pytest.raises(DuckDBConnectorError, match="max_tables=1"),
+    ):
+        source.list_tables()
 
 
 def test_column_limit_fails_closed(database_path: Path) -> None:
     limits = DiscoveryLimits(max_columns_per_table=2)
-    with DuckDBConnector(database_path, limits=limits) as source:
-        with pytest.raises(DuckDBConnectorError, match="max_columns_per_table=2"):
-            source.describe_table("main", "orders")
+    with (
+        DuckDBConnector(database_path, limits=limits) as source,
+        pytest.raises(DuckDBConnectorError, match="max_columns_per_table=2"),
+    ):
+        source.describe_table("main", "orders")
 
 
 def test_snapshot_obeys_relation_limit(database_path: Path) -> None:
     connection = duckdb.connect(str(database_path))
     connection.execute("CREATE TABLE second_table (id INTEGER)")
     connection.close()
-    with DuckDBConnector(database_path, limits=DiscoveryLimits(max_tables=1)) as source:
-        with pytest.raises(DuckDBConnectorError, match="max_tables=1"):
-            source.snapshot()
+    with (
+        DuckDBConnector(database_path, limits=DiscoveryLimits(max_tables=1)) as source,
+        pytest.raises(DuckDBConnectorError, match="max_tables=1"),
+    ):
+        source.snapshot()
 
 
 def test_duckdb_connector_satisfies_data_source_protocol(database_path: Path) -> None:
