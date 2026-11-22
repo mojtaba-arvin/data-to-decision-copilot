@@ -37,15 +37,15 @@ jobs:
         with:
           python-version: "3.13"
       - name: Install dependencies
-        run: uv sync --all-groups
+        run: uv sync --locked --all-groups
       - name: Ruff
-        run: uv run ruff check .
+        run: uv run --locked ruff check .
       - name: Pyright
-        run: uv run pyright
+        run: uv run --locked pyright
       - name: Tests and coverage
-        run: uv run pytest --cov=d2d --cov-report=term-missing
+        run: uv run --locked pytest --cov=d2d --cov-report=term-missing
       - name: Synthetic performance smoke
-        run: uv run python benchmarks/run_benchmark.py --rows 10000 --iterations 5
+        run: uv run --locked python benchmarks/run_benchmark.py --rows 10000 --iterations 5
 
   dependency-audit:
     name: Dependency vulnerability audit
@@ -62,9 +62,9 @@ jobs:
         with:
           python-version: "3.13"
       - name: Install project dependencies
-        run: uv sync --all-groups
+        run: uv sync --locked --all-groups
       - name: Audit installed dependencies
-        run: uv run --with pip-audit pip-audit --skip-editable
+        run: uv run --locked --with pip-audit pip-audit --skip-editable
 
   package:
     name: Build and installed-wheel smoke
@@ -118,45 +118,9 @@ jobs:
       - name: Pull local model
         run: ollama pull qwen3:8b
       - name: Install project
-        run: uv sync --all-groups
+        run: uv sync --locked --all-groups
       - name: Real model to guarded query smoke
         env:
           D2D_OLLAMA_MODEL: qwen3:8b
-        run: uv run python scripts/ollama_smoke.py
+        run: uv run --locked python scripts/ollama_smoke.py
 
-  lockfile:
-    name: Generate and commit dependency lockfile
-    if: github.event_name == 'pull_request' && github.event.pull_request.number == 22
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.ref }}
-      - uses: astral-sh/setup-uv@v5
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-      - name: Resolve exact dependency versions
-        run: uv lock
-      - name: Commit lockfile to integration branch
-        env:
-          GITHUB_HEAD_REF: ${{ github.event.pull_request.head.ref }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add uv.lock
-          if git diff --cached --quiet; then
-            echo "uv.lock is already current"
-            exit 0
-          fi
-          git commit -m "build: pin dependencies in uv.lock"
-          git push origin "HEAD:${GITHUB_HEAD_REF}"
-      - name: Export lockfile artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: resolved-uv-lock
-          path: uv.lock
-          if-no-files-found: error
-          retention-days: 1
