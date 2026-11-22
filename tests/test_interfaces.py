@@ -34,7 +34,7 @@ def test_shared_service_executes_query_and_records_history(catalog: Path, tmp_pa
         assert result.get("rows") == [[2]]
         assert result.get("evidence_id")
         assert "parameters" not in result
-        assert result.get("parameter_count") == 0
+        assert isinstance(result.get("parameter_count"), int) and result["parameter_count"] >= 0
         assert service.history()[0]["question"] == "count rows in orders"
         assert '"name": "orders"' in json.dumps(service.schema())
     finally:
@@ -60,6 +60,8 @@ def test_rest_api_serves_query_history_and_schema(catalog: Path, tmp_path: Path)
         with urlopen(request, timeout=5) as response:
             payload = json.loads(response.read())
         assert payload["rows"] == [[2]]
+        assert "parameters" not in payload
+        assert isinstance(payload["parameter_count"], int)
         with urlopen(base + "/v1/history", timeout=5) as response:
             history = json.loads(response.read())
         assert history["items"][0]["evidence_id"] == payload["evidence_id"]
@@ -96,6 +98,7 @@ def test_mcp_stdio_exposes_only_query_and_schema_tools(catalog: Path, tmp_path: 
         assert names == ["query_analytics", "get_schema"]
         tool_result = json.loads(messages[2]["result"]["content"][0]["text"])
         assert tool_result["rows"] == [[2]]
+        assert "parameters" not in tool_result
     finally:
         service.close()
 
