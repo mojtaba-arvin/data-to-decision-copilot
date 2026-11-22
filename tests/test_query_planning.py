@@ -186,3 +186,63 @@ def test_planner_cannot_supply_raw_sql_or_extra_fields(source_db: Path) -> None:
             "schema_fingerprint": snapshot.fingerprint,
             "columns": ("id",), "sql": "DROP TABLE orders",
         })
+
+
+def test_csv_file_source_executes_through_shared_read_only_catalog(tmp_path: Path) -> None:
+    from d2d.connectors.files import FileDataSource
+
+    root = tmp_path / "inputs"
+    root.mkdir()
+    (root / "orders.csv").write_text(
+        "id,amount\\n1,10.5\\n2,20.0\\n", encoding="utf-8"
+    )
+    catalog = tmp_path / "analytics.duckdb"
+    with FileDataSource(root, ["orders.csv"], catalog_path=catalog) as source:
+        snapshot = source.snapshot()
+        plan = QueryPlan(
+            schema_name="main",
+            table_name="source_0001",
+            schema_fingerprint=snapshot.fingerprint,
+            aggregates=(AggregateSpec(function=AggregateFunction.COUNT, alias="row_count"),),
+            limit=1,
+        )
+        runtime = QueryPlanningRuntime(
+            source_id="file-orders",
+            data_source=source,
+            executor=DuckDBQueryExecutor(catalog),
+            evidence_store=SQLiteEvidenceStore(tmp_path / "file-evidence.sqlite"),
+        )
+        result = asyncio.run(runtime.run("count rows in source_0001", DeterministicQueryPlanner(plan)))
+        assert result.result.columns == ("row_count",)
+        assert result.result.rows == ((2,),)
+
+
+def test_runtime_rejects_schema_change_during_planning(source_db: Path, tmp_path: Path) -> None:
+    from d2d.core.query_planning import QueryPlannerIdentity
+
+    source = DuckDBConnector(source_db)
+    source.open()
+    try:
+        snapshot = source.snapshot()
+        plan = make_plan(snapshot, filters=(), order_by=())
+        delegate = DeterministicQueryPlanner(plan)
+
+        class MutatingPlanner:
+            @property
+            def identity(self) -> QueryPlannerIdentity:
+                return delegate.identity
+
+            def plan(self, question: str, current: SchemaSnapshot) -> QueryPlan:
+                source._connection.execute("ALTER TABLE orders ADD COLUMN changed INTEGER")
+                return delegate.plan(question, current)
+
+        runtime = QueryPlanningRuntime(
+            source_id="sales",
+            data_source=source,
+            executor=DuckDBQueryExecutor(source_db),
+            evidence_store=SQLiteEvidenceStore(tmp_path / "drift.sqlite"),
+        )
+        with pytest.raises(QueryPlanningError, match="schema changed during planning"):
+            asyncio.run(runtime.run("test schema drift", MutatingPlanner()))
+    finally:
+        source.close()
