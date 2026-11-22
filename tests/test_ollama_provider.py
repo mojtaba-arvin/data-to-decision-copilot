@@ -59,7 +59,7 @@ def test_ollama_sends_json_schema_request_to_loopback(monkeypatch: pytest.Monkey
 
     request = captured["request"]
     assert isinstance(request, Request)
-    assert request.data is not None
+    assert isinstance(request.data, bytes)
     payload = json.loads(request.data)
     assert request.full_url == "http://127.0.0.1:11434/api/generate"
     assert payload["model"] == "qwen3:8b"
@@ -120,7 +120,7 @@ def test_rejects_invalid_envelope_and_incomplete_generation(
 
     monkeypatch.setattr(
         "d2d.core.ollama_provider.urlopen",
-        lambda request, timeout: FakeResponse(b'{"response":"{}","done":false}'),
+        response_stub(b'{"response":"{}","done":false}'),
     )
     with pytest.raises(OllamaProviderError, match="did not complete"):
         provider.generate(generation_request())
