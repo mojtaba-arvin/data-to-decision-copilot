@@ -1,9 +1,11 @@
 import json
+from collections.abc import Iterator
 from pathlib import Path
 
 import duckdb
 import pytest
 
+from d2d.connectors.base import SchemaSnapshot
 from d2d.connectors.duckdb import DuckDBConnector
 from d2d.core.model_planning import (
     ModelBackedQueryPlanner,
@@ -25,7 +27,7 @@ class FakeStructuredProvider:
 
 
 @pytest.fixture
-def snapshot(tmp_path: Path):
+def snapshot(tmp_path: Path) -> Iterator[SchemaSnapshot]:
     path = tmp_path / "model-planner.duckdb"
     connection = duckdb.connect(str(path))
     connection.execute(
@@ -36,7 +38,7 @@ def snapshot(tmp_path: Path):
         yield source.snapshot()
 
 
-def make_plan(snapshot, **overrides: object) -> dict[str, object]:
+def make_plan(snapshot: SchemaSnapshot, **overrides: object) -> dict[str, object]:
     value: dict[str, object] = {
         "schema_name": "main",
         "table_name": "orders",
@@ -65,7 +67,7 @@ def planner(response: str) -> tuple[ModelBackedQueryPlanner, FakeStructuredProvi
     )
 
 
-def test_model_output_becomes_only_a_typed_plan(snapshot) -> None:
+def test_model_output_becomes_only_a_typed_plan(snapshot: SchemaSnapshot) -> None:
     raw = json.dumps(make_plan(snapshot))
     adapter, provider = planner(raw)
     result = adapter.plan("total amount by region in orders", snapshot)
@@ -94,20 +96,20 @@ def test_model_output_becomes_only_a_typed_plan(snapshot) -> None:
     ],
 )
 def test_rejects_non_json_duplicate_keys_extra_sql_and_non_finite_values(
-    snapshot, response: str
+    snapshot: SchemaSnapshot, response: str
 ) -> None:
     adapter, _ = planner(response)
     with pytest.raises(ModelPlanningError):
         adapter.plan("show region from orders", snapshot)
 
 
-def test_rejects_schema_fingerprint_mismatch(snapshot) -> None:
+def test_rejects_schema_fingerprint_mismatch(snapshot: SchemaSnapshot) -> None:
     adapter, _ = planner(json.dumps(make_plan(snapshot, schema_fingerprint="0" * 64)))
     with pytest.raises(ModelPlanningError, match="fingerprint"):
         adapter.plan("show region from orders", snapshot)
 
 
-def test_rejects_unknown_column_before_runtime_compilation(snapshot) -> None:
+def test_rejects_unknown_column_before_runtime_compilation(snapshot: SchemaSnapshot) -> None:
     adapter, _ = planner(json.dumps(make_plan(snapshot, columns=["secret"])))
     # The existing compiler remains authoritative for identifier validation.
     result = adapter.plan("show secret from orders", snapshot)
@@ -115,13 +117,13 @@ def test_rejects_unknown_column_before_runtime_compilation(snapshot) -> None:
         compile_query_plan(result, snapshot=snapshot, source_id="test")
 
 
-def test_rejects_oversized_provider_output(snapshot) -> None:
+def test_rejects_oversized_provider_output(snapshot: SchemaSnapshot) -> None:
     adapter, _ = planner(" " * 65_537)
     with pytest.raises(ModelPlanningError, match="byte limit"):
         adapter.plan("show region from orders", snapshot)
 
 
-def test_rejects_oversized_question_before_provider_call(snapshot) -> None:
+def test_rejects_oversized_question_before_provider_call(snapshot: SchemaSnapshot) -> None:
     adapter, provider = planner("{}")
     with pytest.raises(ModelPlanningError, match="question"):
         adapter.plan("x" * 8_193, snapshot)

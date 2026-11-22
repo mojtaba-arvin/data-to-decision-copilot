@@ -136,8 +136,6 @@ class ModelBackedQueryPlanner:
             max_output_bytes=_MAX_RESPONSE_BYTES,
         )
         raw = self.provider.generate(request)
-        if not isinstance(raw, str):
-            raise ModelPlanningError("provider response must be text")
         encoded = raw.encode("utf-8")
         if len(encoded) > _MAX_RESPONSE_BYTES:
             raise ModelPlanningError("provider response exceeds the configured byte limit")
