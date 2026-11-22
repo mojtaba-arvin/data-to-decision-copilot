@@ -18,6 +18,7 @@ def _parser() -> argparse.ArgumentParser:
         command = subparsers.add_parser(name)
         command.add_argument("--catalog", required=True, help="DuckDB catalog path")
         command.add_argument("--evidence-db", default="d2d-evidence.sqlite")
+        command.add_argument("--history-db", default="d2d-history.sqlite")
         command.add_argument("--provider", choices=("rules", "ollama"), default="rules")
         command.add_argument("--model", default="qwen3:8b")
         if name == "query":
@@ -33,6 +34,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     service = build_service(
         catalog_path=args.catalog,
         evidence_path=args.evidence_db,
+        history_path=args.history_db,
         provider=args.provider,
         model=args.model,
     )
