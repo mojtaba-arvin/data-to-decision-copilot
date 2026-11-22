@@ -32,8 +32,13 @@ security, request quotas, and tenant isolation.
   an attacker with full database-file and process access from rewriting the
   entire journal. Higher assurance requires external anchoring or signatures
   with separately protected keys.
-- The current REST history is process-local and is not a durable audit log.
-  Execution Evidence and DecisionTrace persistence are separate stores.
+- Query history is stored in a bounded local SQLite database (default maximum
+  1,000 records). It persists questions and evidence metadata, but not result rows
+  or raw SQL bind values. Questions may themselves contain sensitive information;
+  protect the history database and remove it, including SQLite WAL/SHM sidecars
+  when the service is stopped, when its retention period ends.
+- Query history is not a substitute for the independently verified Evidence
+  journal and DecisionTrace audit stores.
 - The Ollama adapter accepts loopback HTTP only. Model tags are descriptive
   identifiers, not cryptographic model provenance.
 
