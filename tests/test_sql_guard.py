@@ -39,3 +39,38 @@ def test_normalizes_using_requested_dialect() -> None:
     result = validate_read_only_sql('select "id" from "orders"', dialect="postgres")
     assert result.dialect == "postgres"
     assert '"orders"' in result.sql
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "WITH changed AS (DELETE FROM accounts RETURNING *) SELECT * FROM changed",
+        "SELECT * FROM read_parquet('/etc/shadow')",
+        "SELECT * FROM sqlite_scan('secrets.sqlite', 'users')",
+        "SELECT current_setting('secret')",
+        "SELECT 1; ATTACH 'remote.db' AS remote",
+        "PRAGMA enable_external_access=true",
+    ],
+)
+def test_rejects_adversarial_read_only_bypass_shapes(sql: str) -> None:
+    with pytest.raises(SQLValidationError):
+        validate_read_only_sql(sql, dialect="duckdb")
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT * FROM parquet_scan('/etc/shadow')",
+        "SELECT * FROM read_csv_auto('/etc/passwd')",
+        "SELECT * FROM read_json_auto('/etc/passwd')",
+        "SELECT * FROM read_blob('/etc/passwd')",
+        "SELECT * FROM read_text('/etc/passwd')",
+        "SELECT * FROM glob('/etc/*')",
+        "SELECT * FROM query_table('private_table')",
+        "SELECT * FROM postgres_scan('host=attacker', 'public', 'users')",
+        "SELECT * FROM iceberg_scan('/tmp/untrusted')",
+    ],
+)
+def test_rejects_external_and_dynamic_table_function_scans(sql: str) -> None:
+    with pytest.raises(SQLValidationError):
+        validate_read_only_sql(sql, dialect="duckdb")
