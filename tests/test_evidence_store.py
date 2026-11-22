@@ -46,7 +46,7 @@ def test_duplicate_ids_are_rejected_atomically(tmp_path: Path):
     assert store.verify().valid
 
 
-def test_update_and_delete_are_blocked(tmp_path):
+def test_update_and_delete_are_blocked(tmp_path: Path):
     store = SQLiteEvidenceStore(tmp_path / "evidence.sqlite")
     store.append(make_evidence())
     with sqlite3.connect(store.path) as connection:
@@ -56,7 +56,7 @@ def test_update_and_delete_are_blocked(tmp_path):
             connection.execute("DELETE FROM evidence_journal WHERE sequence = 1")
 
 
-def test_concurrent_appends_receive_unique_ordered_sequences(tmp_path):
+def test_concurrent_appends_receive_unique_ordered_sequences(tmp_path: Path):
     store = SQLiteEvidenceStore(tmp_path / "evidence.sqlite")
     items = [make_evidence(index) for index in range(1, 9)]
     with ThreadPoolExecutor(max_workers=8) as pool:
@@ -66,7 +66,7 @@ def test_concurrent_appends_receive_unique_ordered_sequences(tmp_path):
     assert store.verify().valid
 
 
-def test_verifier_detects_payload_tampering(tmp_path):
+def test_verifier_detects_payload_tampering(tmp_path: Path):
     store = SQLiteEvidenceStore(tmp_path / "evidence.sqlite")
     store.append(make_evidence())
     with sqlite3.connect(store.path) as connection:
