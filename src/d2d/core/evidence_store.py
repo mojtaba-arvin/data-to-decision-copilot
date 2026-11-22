@@ -1,12 +1,12 @@
 """SQLite-backed append-only evidence journal with a verifiable hash chain."""
 from __future__ import annotations
 
-from contextlib import closing
-from dataclasses import dataclass
 import hashlib
 import json
-from pathlib import Path
 import sqlite3
+from contextlib import closing
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from d2d.core.contracts import Evidence, EvidenceStatus
