@@ -7,9 +7,10 @@ uv run pytest tests/test_benchmark.py -q
 uv run pytest --cov=d2d --cov-report=term-missing
 ```
 
-The benchmark compares exact typed QueryPlans for English and Persian count,
-aggregation/grouping, and projection requests, and verifies fail-closed rejection
-of unsupported SQL-like input. Its accuracy is a regression metric for this
+The release-branch baseline compares exact typed QueryPlans for the supported
+English count, aggregation/grouping, and projection forms, and verifies fail-closed
+rejection of unsupported SQL-like input. Persian/English plan equivalence is covered
+by the dedicated Phase 14 semantic-planner regression tests. Its accuracy is a regression metric for this
 small supported grammar; it is not a measure of general NL-to-SQL capability.
 
 Runtime resource behavior is covered separately by bounded row/byte, timeout,
