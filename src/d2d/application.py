@@ -4,7 +4,7 @@ from __future__ import annotations
 from collections import deque
 from datetime import UTC, datetime
 from threading import Lock
-from typing import Any
+from typing import cast
 
 from d2d.connectors.base import DataSource
 from d2d.connectors.duckdb import DuckDBConnector
@@ -134,9 +134,11 @@ def build_service(
     )
 
 
-def _json_value(value: Any) -> object:
+def _json_value(value: object) -> object:
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
-    if isinstance(value, (tuple, list)):
-        return [_json_value(item) for item in value]
+    if isinstance(value, tuple):
+        return [_json_value(item) for item in cast(tuple[object, ...], value)]
+    if isinstance(value, list):
+        return [_json_value(item) for item in cast(list[object], value)]
     return str(value)
