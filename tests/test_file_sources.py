@@ -68,3 +68,41 @@ def test_rejects_excessive_columns(file_root: Path) -> None:
 def test_csv_inference_sample_must_be_positive(file_root: Path) -> None:
     with pytest.raises(ValueError, match="csv_sample_size"):
         FileDataSource(file_root, ["orders.csv"], csv_sample_size=0)
+
+
+def test_file_catalog_materializes_sources_and_enforces_total_size(file_root: Path, tmp_path: Path) -> None:
+    catalog = tmp_path / "catalog.duckdb"
+    with FileDataSource(
+        file_root, ["orders.csv", "products.parquet"], catalog_path=catalog
+    ) as source:
+        assert source.catalog_path == str(catalog)
+        assert source.list_tables()
+        assert source.list_tables()[0].name == "source_0001"
+    with pytest.raises(FileSourceError, match="max_total_bytes"):
+        FileDataSource(
+            file_root, ["orders.csv", "products.parquet"], max_total_bytes=1
+        ).open()
+
+
+def test_rejects_symlink_catalog_destination(file_root: Path, tmp_path: Path) -> None:
+    outside = tmp_path / "outside.duckdb"
+    connection = duckdb.connect(str(outside))
+    connection.close()
+    catalog_link = tmp_path / "catalog-link.duckdb"
+    catalog_link.symlink_to(outside)
+    with pytest.raises(FileSourceError, match="catalog database must not be a symlink"):
+        FileDataSource(
+            file_root, ["orders.csv"], catalog_path=catalog_link
+        ).open()
+
+
+def test_rejects_corrupt_parquet_input(file_root: Path) -> None:
+    (file_root / "broken.parquet").write_bytes(b"not-a-parquet-file")
+    with pytest.raises(FileSourceError, match="could not open file source"):
+        FileDataSource(file_root, ["broken.parquet"]).open()
+
+
+def test_rejects_malformed_csv_input(file_root: Path) -> None:
+    (file_root / "broken.csv").write_bytes(b"")
+    with pytest.raises(FileSourceError, match="could not open file source"):
+        FileDataSource(file_root, ["broken.csv"]).open()
