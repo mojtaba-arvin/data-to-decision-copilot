@@ -30,16 +30,25 @@ class FileDataSource:
     arbitrary SQL execution method.
     """
     def __init__(self, root: str | Path, files: tuple[str | Path, ...] | list[str | Path], *,
-                 max_file_bytes: int = 64 * 1024 * 1024, csv_sample_size: int = 20_480,
+                 max_file_bytes: int = 64 * 1024 * 1024,
+                 max_total_bytes: int = 256 * 1024 * 1024,
+                 csv_sample_size: int = 20_480,
+                 catalog_path: str | Path = ":memory:",
                  limits: DiscoveryLimits | None = None) -> None:
         if max_file_bytes < 1:
             raise ValueError("max_file_bytes must be at least 1")
+        if max_total_bytes < 1:
+            raise ValueError("max_total_bytes must be at least 1")
+        if not str(catalog_path):
+            raise ValueError("catalog_path must not be empty")
         if csv_sample_size < 1:
             raise ValueError("csv_sample_size must be at least 1")
         self._root_input = Path(root)
         self._files = tuple(Path(item) for item in files)
         self._max_file_bytes = max_file_bytes
+        self._max_total_bytes = max_total_bytes
         self._csv_sample_size = csv_sample_size
+        self._catalog_path = str(catalog_path)
         self._limits = limits or DiscoveryLimits()
         self._connection: duckdb.DuckDBPyConnection | None = None
         self._tables: tuple[TableInfo, ...] = ()
@@ -63,11 +72,20 @@ class FileDataSource:
                 raise FileSourceError("at least one explicit file is required")
             if len(self._files) > self._limits.max_tables:
                 raise FileSourceError(f"file count exceeds max_tables={self._limits.max_tables}")
-            connection = duckdb.connect(":memory:")
+            validated_files = [self._validate_file(root, item) for item in self._files]
+            total_bytes = sum(path.stat().st_size for path in validated_files)
+            if total_bytes > self._max_total_bytes:
+                raise FileSourceError(
+                    f"source files exceed max_total_bytes={self._max_total_bytes}"
+                )
+            if self._catalog_path != ":memory:":
+                catalog = Path(self._catalog_path)
+                if catalog.resolve() in validated_files:
+                    raise FileSourceError("catalog database must not overwrite a source file")
+            connection = duckdb.connect(self._catalog_path)
             tables: list[TableInfo] = []
             try:
-                for index, relative in enumerate(self._files, start=1):
-                    path = self._validate_file(root, relative)
+                for index, path in enumerate(validated_files, start=1):
                     name = f"source_{index:04d}"
                     if path.suffix.lower() == ".csv":
                         relation = connection.read_csv(str(path), sample_size=self._csv_sample_size)
@@ -78,7 +96,7 @@ class FileDataSource:
                     if len(relation.columns) > self._limits.max_columns_per_table:
                         raise FileSourceError("file schema exceeds "
                                               f"max_columns_per_table={self._limits.max_columns_per_table}")
-                    relation.create_view(name)
+                    relation.create(name)
                     tables.append(TableInfo(catalog="memory", schema="main",
                                             name=name, table_type=table_type))
             except Exception:
@@ -91,6 +109,11 @@ class FileDataSource:
             raise
         except (OSError, duckdb.Error, ValueError) as exc:
             raise FileSourceError(f"could not open file source: {exc}") from exc
+
+    @property
+    def catalog_path(self) -> str:
+        """DuckDB catalog used by a matching DuckDBQueryExecutor."""
+        return self._catalog_path
 
     def close(self) -> None:
         if self._connection is not None:
