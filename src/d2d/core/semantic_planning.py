@@ -1,8 +1,4 @@
-"""Constrained offline semantic planning and query-to-decision orchestration.
-
-The rule-based adapter supports a deliberately tiny grammar. It is not an LLM and
-fails closed when a question cannot be mapped unambiguously to discovered schema.
-"""
+"""Constrained bilingual semantic planning and query-to-decision orchestration."""
 from __future__ import annotations
 
 import hashlib
@@ -25,102 +21,108 @@ from d2d.core.query_planning import (
 )
 from d2d.core.runtime import DecisionPolicy, DecisionRuntime, RuntimeResult
 from d2d.core.runtime import Planner as DecisionPlanner
+from d2d.core.semantic_layer import SemanticLayer
 
 
 class SemanticPlanningError(ValueError):
     """Raised when the supported question grammar cannot be resolved safely."""
 
 
+def _normalize_question(question: str) -> str:
+    """Translate a small explicit Persian phrase grammar; identifiers stay schema-grounded."""
+    text = question.strip().replace("ي", "ی").replace("ك", "ک").replace("\u200c", "")
+    text = " ".join(text.split()).rstrip("؟?!.")
+
+    patterns = (
+        (r"^تعداد\s+(?:ردیف(?:ها)?|رکورد(?:ها)?)\s+(?:در|از)\s+", "count rows in "),
+        (r"^شمارش\s+(?:ردیف(?:ها)?|رکورد(?:ها)?)\s+(?:در|از)\s+", "count rows in "),
+        (r"^(?:مجموع|جمع)\s+(.+?)\s+به\s+تفکیک\s+(.+?)\s+(?:در|از)\s+", r"sum \1 by \2 in "),
+        (r"^(?:میانگین|متوسط)\s+(.+?)\s+(?:در|از)\s+", r"average \1 in "),
+        (r"^(?:کمینه|حداقل)\s+(.+?)\s+(?:در|از)\s+", r"min \1 in "),
+        (r"^(?:بیشینه|حداکثر)\s+(.+?)\s+(?:در|از)\s+", r"max \1 in "),
+        (r"^(?:نمایش|نشان\s+بده|فهرست)\s+(.+?)\s+(?:از|در)\s+", r"show \1 from "),
+    )
+    for pattern, replacement in patterns:
+        translated, count = re.subn(pattern, replacement, text, count=1, flags=re.IGNORECASE)
+        if count:
+            text = translated
+            break
+    return " ".join(text.split())
+
+
 @dataclass(frozen=True, slots=True)
 class RuleBasedSemanticPlanner:
-    """Offline, deterministic parser for explicit aggregate/projection templates.
+    """Offline deterministic parser for explicit Persian/English aggregate/projection templates.
 
-    Supported examples:
-      - "count rows in orders"
-      - "sum amount by region in orders"
-      - "average amount in orders"
-      - "show id, region from orders"
-
-    Table and column names must be present in the current schema and referenced
-    explicitly. No fuzzy matching, inferred joins, filters, or free-form SQL.
+    Persian examples: «تعداد ردیف‌ها در orders», «مجموع amount به تفکیک region در orders»,
+    «میانگین amount در orders», «نمایش id, region از orders».
+    Table and column names must exist in the discovered schema. No fuzzy matching,
+    inferred joins, filters, or free-form SQL are accepted.
     """
-
-    planner_id: str = "offline-rule-semantic-planner"
-    version: str = "1"
+    planner_id: str = "offline-bilingual-rule-semantic-planner"
+    version: str = "3"
+    semantic_layer: SemanticLayer | None = None
 
     @property
     def identity(self) -> QueryPlannerIdentity:
+        semantic_definition = (
+            self.semantic_layer.model_dump_json() if self.semantic_layer is not None else "no-semantic-layer"
+        )
         artifact = hashlib.sha256(
-            b"offline-rule-semantic-planner:v1:count,sum,avg,min,max,projection"
+            (
+                "offline-bilingual-rule-semantic-planner:v3:fa-en:count,sum,avg,min,max,projection:"
+                + semantic_definition
+            ).encode("utf-8")
         ).hexdigest()
         prompt = hashlib.sha256(
-            b"grammar:count|aggregate-column-by-group|show-columns"
+            b"grammar:fa-en:count|aggregate-column-by-group|show-columns"
         ).hexdigest()
         return QueryPlannerIdentity(
-            planner_id=self.planner_id,
-            version=self.version,
-            artifact_sha256=artifact,
-            prompt_sha256=prompt,
+            planner_id=self.planner_id, version=self.version,
+            artifact_sha256=artifact, prompt_sha256=prompt,
         )
 
     def plan(self, question: str, snapshot: SchemaSnapshot) -> QueryPlan:
-        text = " ".join(question.strip().rstrip("?.!").split())
+        text = _normalize_question(question)
         if not text:
             raise SemanticPlanningError("question must not be empty")
-
         count = re.fullmatch(
             r"count\s+(?:of\s+)?(?:rows|records)\s+(?:in|from)\s+([\w]+)",
-            text,
-            re.IGNORECASE,
+            text, re.IGNORECASE,
         )
         aggregate = re.fullmatch(
             r"(sum|total|average|avg|min|max)\s+(?:of\s+)?([\w]+)"
             r"(?:\s+by\s+([\w]+))?\s+(?:in|from)\s+([\w]+)",
-            text,
-            re.IGNORECASE,
+            text, re.IGNORECASE,
         )
         projection = re.fullmatch(
             r"(?:show|list|select)\s+([\w, ]+)\s+(?:in|from)\s+([\w]+)",
-            text,
-            re.IGNORECASE,
+            text, re.IGNORECASE,
         )
-
         if count:
             table = self._table(snapshot, count.group(1))
             return QueryPlan(
-                schema_name=table.table.schema,
-                table_name=table.table.name,
+                schema_name=table.table.schema, table_name=table.table.name,
                 schema_fingerprint=snapshot.fingerprint,
                 aggregates=(AggregateSpec(function=AggregateFunction.COUNT, alias="row_count"),),
                 limit=1,
             )
-
         if aggregate:
             operation, column_name, group_name, table_name = aggregate.groups()
             table = self._table(snapshot, table_name)
             column = self._column(table, column_name)
             function = {
-                "sum": AggregateFunction.SUM,
-                "total": AggregateFunction.SUM,
-                "average": AggregateFunction.AVG,
-                "avg": AggregateFunction.AVG,
-                "min": AggregateFunction.MIN,
-                "max": AggregateFunction.MAX,
+                "sum": AggregateFunction.SUM, "total": AggregateFunction.SUM,
+                "average": AggregateFunction.AVG, "avg": AggregateFunction.AVG,
+                "min": AggregateFunction.MIN, "max": AggregateFunction.MAX,
             }[operation.casefold()]
-            groups: tuple[str, ...] = ()
-            if group_name:
-                groups = (self._column(table, group_name),)
-            alias = f"{function.value}_{column}"
+            groups = (self._column(table, group_name),) if group_name else ()
             return QueryPlan(
-                schema_name=table.table.schema,
-                table_name=table.table.name,
-                schema_fingerprint=snapshot.fingerprint,
-                columns=groups,
-                aggregates=(AggregateSpec(function=function, column=column, alias=alias),),
-                group_by=groups,
-                limit=100,
+                schema_name=table.table.schema, table_name=table.table.name,
+                schema_fingerprint=snapshot.fingerprint, columns=groups,
+                aggregates=(AggregateSpec(function=function, column=column, alias=f"{function.value}_{column}"),),
+                group_by=groups, limit=100,
             )
-
         if projection:
             names, table_name = projection.groups()
             table = self._table(snapshot, table_name)
@@ -128,22 +130,22 @@ class RuleBasedSemanticPlanner:
             if not columns or len(columns) != len(set(columns)):
                 raise SemanticPlanningError("projection columns must be non-empty and unique")
             return QueryPlan(
-                schema_name=table.table.schema,
-                table_name=table.table.name,
-                schema_fingerprint=snapshot.fingerprint,
-                columns=columns,
-                limit=100,
+                schema_name=table.table.schema, table_name=table.table.name,
+                schema_fingerprint=snapshot.fingerprint, columns=columns, limit=100,
             )
-
         raise SemanticPlanningError(
-            "unsupported question; use count rows, an aggregate, or show/list columns"
+            "unsupported or ambiguous question; use a supported count, aggregate, or projection form"
         )
 
-    @staticmethod
-    def _table(snapshot: SchemaSnapshot, requested: str) -> TableSchema:
+    def _table(self, snapshot: SchemaSnapshot, requested: str) -> TableSchema:
+        physical_name = (
+            self.semantic_layer.resolve_table(requested)
+            if self.semantic_layer is not None else None
+        )
+        resolved_name = physical_name or requested
         matches = [
             item for item in snapshot.tables
-            if item.table.name.casefold() == requested.casefold()
+            if item.table.name.casefold() == resolved_name.casefold()
         ]
         if len(matches) != 1:
             raise SemanticPlanningError(
@@ -151,31 +153,30 @@ class RuleBasedSemanticPlanner:
             )
         return matches[0]
 
-    @staticmethod
-    def _column(table: TableSchema, requested: str) -> str:
+    def _column(self, table: TableSchema, requested: str) -> str:
+        semantic_field = (
+            self.semantic_layer.resolve_field(table.table.name, requested)
+            if self.semantic_layer is not None else None
+        )
+        resolved_name = semantic_field.physical_column if semantic_field is not None else requested
         matches = [
             item.name for item in table.columns
-            if item.name.casefold() == requested.casefold()
+            if item.name.casefold() == resolved_name.casefold()
         ]
         if len(matches) != 1:
-            raise SemanticPlanningError(
-                f"column is unknown in discovered table: {requested}"
-            )
+            raise SemanticPlanningError(f"column is unknown in discovered table: {requested}")
         return matches[0]
 
 
 class EvaluationCase(BaseModel):
     """One fixed semantic-planner regression case."""
-
     model_config = ConfigDict(extra="forbid", frozen=True)
-
     question: str = Field(min_length=1)
     expected: QueryPlan
 
 
 class EvaluationReport(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-
     total: int = Field(ge=0)
     passed: int = Field(ge=0)
     rejected: int = Field(ge=0)
@@ -186,10 +187,7 @@ class EvaluationReport(BaseModel):
 
 
 def evaluate_semantic_planner(
-    planner: QueryPlanner,
-    *,
-    snapshot: SchemaSnapshot,
-    cases: tuple[EvaluationCase, ...],
+    planner: QueryPlanner, *, snapshot: SchemaSnapshot, cases: tuple[EvaluationCase, ...],
 ) -> EvaluationReport:
     """Compare exact typed plans; invalid/unsupported outputs count as failures."""
     passed = 0
@@ -212,33 +210,18 @@ class QueryDecisionResult:
 
 
 class QueryDecisionRuntime:
-    """Run bounded query first; optionally pass its persisted Evidence to policy.
-
-    No decision is generated automatically. If no decision planner is supplied,
-    the result is evidence-only. If supplied, Phase 9's DecisionRuntime validates
-    the evidence journal, checks provenance, enforces policy, then persists trace.
-    """
-
+    """Run bounded query first; optionally pass persisted Evidence through policy."""
     def __init__(
-        self,
-        *,
-        query_runtime: QueryPlanningRuntime,
-        evidence_store: SQLiteEvidenceStore,
-        trace_store: SQLiteDecisionTraceStore,
-        policy: DecisionPolicy,
+        self, *, query_runtime: QueryPlanningRuntime, evidence_store: SQLiteEvidenceStore,
+        trace_store: SQLiteDecisionTraceStore, policy: DecisionPolicy,
     ) -> None:
         self._query_runtime = query_runtime
         self._decision_runtime = DecisionRuntime(
-            evidence_store=evidence_store,
-            trace_store=trace_store,
-            policy=policy,
+            evidence_store=evidence_store, trace_store=trace_store, policy=policy,
         )
 
     async def run(
-        self,
-        *,
-        question: str,
-        query_planner: QueryPlanner,
+        self, *, question: str, query_planner: QueryPlanner,
         decision_planner: DecisionPlanner | None = None,
         expected_schema_fingerprints: dict[str, str] | None = None,
     ) -> QueryDecisionResult:
@@ -246,9 +229,7 @@ class QueryDecisionRuntime:
         if decision_planner is None:
             return QueryDecisionResult(query=query, decision=None)
         decision = self._decision_runtime.run(
-            question=question,
-            evidence_ids=(query.evidence_id,),
-            planner=decision_planner,
+            question=question, evidence_ids=(query.evidence_id,), planner=decision_planner,
             expected_schema_fingerprints=expected_schema_fingerprints,
         )
         return QueryDecisionResult(query=query, decision=decision)
