@@ -197,3 +197,77 @@ def test_persian_unknown_or_ambiguous_request_fails_closed(database: Path) -> No
         snapshot = source.snapshot()
     with pytest.raises(SemanticPlanningError):
         RuleBasedSemanticPlanner().plan("تعداد مشتریان در orders", snapshot)
+
+
+def test_semantic_layer_resolves_business_table_and_field_aliases(database: Path) -> None:
+    from d2d.core.semantic_layer import (
+        SemanticField,
+        SemanticFieldKind,
+        SemanticLayer,
+        SemanticTable,
+    )
+
+    with DuckDBConnector(database) as source:
+        snapshot = source.snapshot()
+    layer = SemanticLayer(
+        version="finance-v1",
+        tables=(
+            SemanticTable(
+                name="sales",
+                physical_table="orders",
+                synonyms=("transactions",),
+                fields=(
+                    SemanticField(
+                        name="revenue", physical_column="amount",
+                        kind=SemanticFieldKind.METRIC, synonyms=("sales amount",),
+                        unit="USD",
+                    ),
+                    SemanticField(
+                        name="territory", physical_column="region",
+                        kind=SemanticFieldKind.DIMENSION, synonyms=("market",),
+                    ),
+                ),
+            ),
+        ),
+    )
+    planner = RuleBasedSemanticPlanner(semantic_layer=layer)
+    semantic_plan = planner.plan("sum revenue by territory in sales", snapshot)
+    physical_plan = RuleBasedSemanticPlanner().plan(
+        "sum amount by region in orders", snapshot
+    )
+    assert semantic_plan == physical_plan
+    assert planner.identity.artifact_sha256 != RuleBasedSemanticPlanner().identity.artifact_sha256
+
+
+def test_semantic_layer_rejects_ambiguous_business_aliases(database: Path) -> None:
+    from d2d.core.semantic_layer import (
+        SemanticField,
+        SemanticFieldKind,
+        SemanticLayer,
+        SemanticTable,
+    )
+
+    with DuckDBConnector(database) as source:
+        snapshot = source.snapshot()
+    layer = SemanticLayer(
+        version="ambiguous-v1",
+        tables=(
+            SemanticTable(
+                name="orders", physical_table="orders",
+                fields=(
+                    SemanticField(
+                        name="revenue", physical_column="amount",
+                        kind=SemanticFieldKind.METRIC, synonyms=("sales",),
+                    ),
+                    SemanticField(
+                        name="net revenue", physical_column="net_amount",
+                        kind=SemanticFieldKind.METRIC, synonyms=("sales",),
+                    ),
+                ),
+            ),
+        ),
+    )
+    with pytest.raises(ValueError, match="ambiguous semantic field"):
+        RuleBasedSemanticPlanner(semantic_layer=layer).plan(
+            "sum sales in orders", snapshot
+        )
