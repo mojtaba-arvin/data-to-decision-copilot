@@ -22,10 +22,11 @@ The first implementation milestone is deliberately small:
 - A structural DataSource protocol shared by metadata adapters.
 - Bounded relation and column discovery; limit violations fail closed.
 - Explicit CSV/Parquet metadata sources with root confinement, symlink rejection, file-size ceilings, and bounded CSV inference.
+- A separate bounded DuckDB executor with read-only file access, conservative SQL function allowlisting, query interruption, and row/serialized-byte output ceilings (Phase 4 draft).
 - Table/view and column metadata plus deterministic schema fingerprints.
 - Deterministic unit tests that do not call an LLM or access a network.
 
-Analytical SQL execution, execution-derived evidence generation, planner, verifier, API, MCP server, UI, and benchmark suites remain future milestones.
+Execution-derived evidence generation, planner, verifier, API, MCP server, UI, and benchmark suites remain future milestones.
 
 ## Development
 
@@ -40,7 +41,7 @@ uv run pyright
 
 ## Security boundary
 
-SQL validation is defense in depth, **not** a replacement for database-enforced read-only credentials, statement timeouts, resource limits, or network isolation. Never connect this project to a production database using a privileged account. Query results and schema descriptions are untrusted data, not instructions.
+SQL validation is defense in depth, **not** a replacement for database-enforced read-only credentials, OS-level isolation, or network policy. The Phase 4 DuckDB executor applies per-query deadlines via DuckDB interruption, disables external access and extension loading, and bounds fetched output; its memory ceiling is not an OS process sandbox. Never connect this project to a production database using a privileged account. Query results and schema descriptions are untrusted data, not instructions.
 
 ## License
 
