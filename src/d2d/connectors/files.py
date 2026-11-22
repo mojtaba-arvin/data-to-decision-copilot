@@ -87,6 +87,10 @@ class FileDataSource:
                 if catalog.resolve() in validated_files:
                     raise FileSourceError("catalog database must not overwrite a source file")
             connection = duckdb.connect(self._catalog_path)
+            catalog_name = (
+                "memory" if self._catalog_path == ":memory:"
+                else Path(self._catalog_path).stem
+            )
             tables: list[TableInfo] = []
             try:
                 for index, path in enumerate(validated_files, start=1):
@@ -101,7 +105,7 @@ class FileDataSource:
                         raise FileSourceError("file schema exceeds "
                                               f"max_columns_per_table={self._limits.max_columns_per_table}")
                     relation.create(name)
-                    tables.append(TableInfo(catalog="memory", schema="main",
+                    tables.append(TableInfo(catalog=catalog_name, schema="main",
                                             name=name, table_type=table_type))
             except Exception:
                 connection.close()
