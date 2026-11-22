@@ -1,14 +1,16 @@
 import sqlite3
+from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
+from d2d.core.contracts import Evidence
 from d2d.core.evidence import create_execution_evidence
 from d2d.core.evidence_store import SQLiteEvidenceStore
 from d2d.core.sql_executor import QueryResult
 
 
-def make_evidence(value: int = 7):
+def make_evidence(value: int = 7) -> Evidence:
     return create_execution_evidence(
         sql=f"SELECT {value} AS value",
         dialect="duckdb",
@@ -25,7 +27,7 @@ def make_evidence(value: int = 7):
     )
 
 
-def test_append_round_trip_and_verify(tmp_path):
+def test_append_round_trip_and_verify(tmp_path: Path):
     store = SQLiteEvidenceStore(tmp_path / "evidence.sqlite")
     item = make_evidence()
     assert store.append(item) == 1
