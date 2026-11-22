@@ -9,6 +9,17 @@ from typing import TextIO, cast
 from d2d.application import CopilotService
 
 
+def _content_result(payload: object) -> object:
+    return {
+        "content": [
+            {
+                "type": "text",
+                "text": json.dumps(payload, ensure_ascii=False, default=str),
+            }
+        ]
+    }
+
+
 def run_stdio(
     service: CopilotService, *, reader: TextIO | None = None, writer: TextIO | None = None,
 ) -> None:
@@ -71,7 +82,7 @@ def run_stdio(
                     payload = asyncio.run(service.query(cast(str, arguments["question"])))
                 else:
                     raise ValueError("unknown tool or invalid arguments")
-                result = {"content": [{"type": "text", "text": json.dumps(payload, ensure_ascii=False, default=str)}]}
+                result = _content_result(payload)
             else:
                 if request_id is None:
                     continue
