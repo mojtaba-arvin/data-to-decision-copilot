@@ -21,6 +21,7 @@ from d2d.core.query_planning import (
 )
 from d2d.core.runtime import DecisionPolicy, DecisionRuntime, RuntimeResult
 from d2d.core.runtime import Planner as DecisionPlanner
+from d2d.core.semantic_layer import SemanticLayer
 
 
 class SemanticPlanningError(ValueError):
@@ -59,12 +60,19 @@ class RuleBasedSemanticPlanner:
     inferred joins, filters, or free-form SQL are accepted.
     """
     planner_id: str = "offline-bilingual-rule-semantic-planner"
-    version: str = "2"
+    version: str = "3"
+    semantic_layer: SemanticLayer | None = None
 
     @property
     def identity(self) -> QueryPlannerIdentity:
+        semantic_definition = (
+            self.semantic_layer.model_dump_json() if self.semantic_layer is not None else "no-semantic-layer"
+        )
         artifact = hashlib.sha256(
-            b"offline-bilingual-rule-semantic-planner:v2:fa-en:count,sum,avg,min,max,projection"
+            (
+                "offline-bilingual-rule-semantic-planner:v3:fa-en:count,sum,avg,min,max,projection:"
+                + semantic_definition
+            ).encode("utf-8")
         ).hexdigest()
         prompt = hashlib.sha256(
             b"grammar:fa-en:count|aggregate-column-by-group|show-columns"
@@ -129,18 +137,32 @@ class RuleBasedSemanticPlanner:
             "unsupported or ambiguous question; use a supported count, aggregate, or projection form"
         )
 
-    @staticmethod
-    def _table(snapshot: SchemaSnapshot, requested: str) -> TableSchema:
-        matches = [item for item in snapshot.tables if item.table.name.casefold() == requested.casefold()]
+    def _table(self, snapshot: SchemaSnapshot, requested: str) -> TableSchema:
+        physical_name = (
+            self.semantic_layer.resolve_table(requested)
+            if self.semantic_layer is not None else None
+        )
+        resolved_name = physical_name or requested
+        matches = [
+            item for item in snapshot.tables
+            if item.table.name.casefold() == resolved_name.casefold()
+        ]
         if len(matches) != 1:
             raise SemanticPlanningError(
                 f"table is unknown or ambiguous in discovered schema: {requested}"
             )
         return matches[0]
 
-    @staticmethod
-    def _column(table: TableSchema, requested: str) -> str:
-        matches = [item.name for item in table.columns if item.name.casefold() == requested.casefold()]
+    def _column(self, table: TableSchema, requested: str) -> str:
+        semantic_field = (
+            self.semantic_layer.resolve_field(table.table.name, requested)
+            if self.semantic_layer is not None else None
+        )
+        resolved_name = semantic_field.physical_column if semantic_field is not None else requested
+        matches = [
+            item.name for item in table.columns
+            if item.name.casefold() == resolved_name.casefold()
+        ]
         if len(matches) != 1:
             raise SemanticPlanningError(f"column is unknown in discovered table: {requested}")
         return matches[0]
