@@ -38,9 +38,10 @@ def test_describe_table_returns_ordered_column_metadata(database_path):
 
 
 def test_unknown_table_fails_closed(database_path):
-    with DuckDBConnector(database_path) as source:
-        with pytest.raises(DuckDBConnectorError, match="not found"):
-            source.describe_table("main", "missing")
+    with DuckDBConnector(database_path) as source, pytest.raises(
+        DuckDBConnectorError, match="not found"
+    ):
+        source.describe_table("main", "missing")
 
 
 def test_schema_fingerprint_is_stable_and_changes_with_schema(database_path):
@@ -65,6 +66,7 @@ def test_connector_requires_open_before_inspection():
 
 
 def test_metadata_queries_do_not_accept_identifier_injection(database_path):
-    with DuckDBConnector(database_path) as source:
-        with pytest.raises(DuckDBConnectorError, match="not found"):
-            source.describe_table("main' OR 1=1 --", "orders")
+    with DuckDBConnector(database_path) as source, pytest.raises(
+        DuckDBConnectorError, match="not found"
+    ):
+        source.describe_table("main' OR 1=1 --", "orders")
