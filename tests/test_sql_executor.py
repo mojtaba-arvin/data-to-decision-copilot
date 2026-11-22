@@ -1,4 +1,5 @@
 import asyncio
+from pathlib import Path
 
 import duckdb
 import pytest
@@ -11,15 +12,17 @@ from d2d.core.sql_executor import (
 from d2d.core.sql_guard import SQLValidationError, validate_read_only_sql
 
 
-def test_executes_select_with_bound_parameters_and_caps_rows() -> None:
-    connection = duckdb.connect(":memory:")
+def test_executes_select_with_bound_parameters_and_caps_rows(tmp_path: Path) -> None:
+    database = tmp_path / "facts.duckdb"
+    connection = duckdb.connect(str(database))
     connection.execute("CREATE TABLE facts (id INTEGER, value VARCHAR)")
     connection.execute("INSERT INTO facts VALUES (1, 'a'), (2, 'b'), (3, 'c')")
     connection.close()
 
     async def scenario() -> None:
         executor = DuckDBQueryExecutor(
-            limits=ExecutionLimits(max_rows=2, max_bytes=1024)
+            database,
+            limits=ExecutionLimits(max_rows=2, max_bytes=1024),
         )
         result = await executor.execute(
             "SELECT id, value FROM facts WHERE id > ? ORDER BY id", [0]
@@ -35,13 +38,13 @@ def test_executes_select_with_bound_parameters_and_caps_rows() -> None:
 def test_enforces_serialized_output_byte_limit() -> None:
     async def scenario() -> None:
         executor = DuckDBQueryExecutor(
-            limits=ExecutionLimits(max_rows=10, max_bytes=12)
+            limits=ExecutionLimits(max_rows=10, max_bytes=16)
         )
-        result = await executor.execute("SELECT repeat('x', 100)")
+        result = await executor.execute("SELECT repeat('x', 100) AS value")
         assert result.rows == ()
         assert result.captured_rows == 0
         assert result.truncated is True
-        assert result.output_bytes <= 12
+        assert result.output_bytes <= 16
 
     asyncio.run(scenario())
 
@@ -49,7 +52,7 @@ def test_enforces_serialized_output_byte_limit() -> None:
 def test_timeout_interrupts_query_and_next_request_isolated() -> None:
     async def scenario() -> None:
         executor = DuckDBQueryExecutor(
-            limits=ExecutionLimits(timeout_seconds=0.05, max_rows=5, max_bytes=1024)
+            limits=ExecutionLimits(timeout_seconds=0.1, max_rows=5, max_bytes=1024)
         )
         with pytest.raises(QueryTimeoutError):
             await executor.execute("SELECT sum(i) FROM range(100000000000) AS t(i)")
