@@ -20,3 +20,19 @@ the model tag, hardware, prompt version, dataset version, and raw outputs.
 
 
 The Phase 14 PR adds a separate bilingual regression suite for equivalent Persian and English requests; keep that suite in the full integration gate.
+
+
+## Local latency benchmark
+
+Run the reproducible schema-discovery, semantic-planning, and query-to-evidence
+benchmark with synthetic data:
+
+```bash
+uv run python benchmarks/run_benchmark.py --rows 100000 --iterations 20
+```
+
+The harness reports median and p95 milliseconds for each stage. It performs a
+warm-up before measuring the end-to-end path and verifies that the count result
+matches the generated dataset. Results are local regression measurements, not
+cross-machine performance guarantees. Increase rows and iterations to explore
+resource behavior; do not run untrusted datasets without OS-level isolation.
