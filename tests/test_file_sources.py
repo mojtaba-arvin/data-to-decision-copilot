@@ -82,3 +82,15 @@ def test_file_catalog_materializes_sources_and_enforces_total_size(file_root: Pa
         FileDataSource(
             file_root, ["orders.csv", "products.parquet"], max_total_bytes=1
         ).open()
+
+
+def test_rejects_symlink_catalog_destination(file_root: Path, tmp_path: Path) -> None:
+    outside = tmp_path / "outside.duckdb"
+    connection = duckdb.connect(str(outside))
+    connection.close()
+    catalog_link = tmp_path / "catalog-link.duckdb"
+    catalog_link.symlink_to(outside)
+    with pytest.raises(FileSourceError, match="catalog database must not be a symlink"):
+        FileDataSource(
+            file_root, ["orders.csv"], catalog_path=catalog_link
+        ).open()
