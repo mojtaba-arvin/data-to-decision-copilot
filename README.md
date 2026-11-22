@@ -84,8 +84,11 @@ same typed QueryPlanningRuntime and cannot execute arbitrary SQL.
 Serve `ui/index.html` from the same origin as the REST API (or configure a local
 reverse proxy) to use the lightweight browser interface. It displays query results,
 bounded execution metadata, the evidence identifier, schema fingerprint, planner
-identity, and recent in-process query history. History is process-local and resets
-when the service restarts; durable decision-trace history remains a separate layer.
+identity, and recent query history. Query history is stored in a bounded local SQLite
+database and survives service restarts; it stores the question and evidence metadata,
+not result rows or raw SQL bind values. Questions themselves may contain sensitive
+information, so protect the history database and apply the documented retention policy.
+Decision traces remain a separate audit layer.
 
 The CLI, REST, and MCP interfaces share one service implementation. The default
 planner is the deterministic Persian/English grammar; `--provider ollama` opts
