@@ -58,7 +58,7 @@ def validate_read_only_sql(sql: str, dialect: str = "") -> ValidatedQuery:
     for node in tree.walk():
         if forbidden_types and isinstance(node, forbidden_types):
             raise SQLValidationError(f"forbidden SQL operation: {type(node).__name__}")
-        if isinstance(node, exp.Func):
+        if isinstance(node, exp.Func) and not isinstance(node, (exp.And, exp.Or, exp.Not)):
             function_name = (
                 node.name if isinstance(node, exp.Anonymous) else node.sql_name()
             ).upper()
