@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import time
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol
@@ -241,14 +242,24 @@ def compile_query_plan(
     )
 
 
+class QueryPlannerIdentity(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    planner_id: str = Field(min_length=1)
+    version: str = Field(min_length=1)
+    artifact_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    prompt_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @property
+    def reference(self) -> str:
+        return f"{self.planner_id}@{self.version}#sha256:{self.artifact_sha256}"
+
+
 class QueryPlanner(Protocol):
     """Model/provider adapter: natural-language intent to typed QueryPlan."""
 
     @property
-    def planner_id(self) -> str: ...
-
-    @property
-    def planner_version(self) -> str: ...
+    def identity(self) -> QueryPlannerIdentity: ...
 
     def plan(self, question: str, snapshot: SchemaSnapshot) -> QueryPlan: ...
 
@@ -260,6 +271,24 @@ class DeterministicQueryPlanner:
     template: QueryPlan
     planner_id: str = "deterministic-query-plan"
     planner_version: str = "1"
+
+    @property
+    def identity(self) -> QueryPlannerIdentity:
+        canonical = json.dumps(
+            {
+                "planner_id": self.planner_id,
+                "version": self.planner_version,
+                "template": self.template.model_dump(mode="json"),
+            },
+            sort_keys=True, separators=(",", ":"),
+        ).encode("utf-8")
+        prompt = hashlib.sha256(b"pre-authored-query-plan:v1").hexdigest()
+        return QueryPlannerIdentity(
+            planner_id=self.planner_id,
+            version=self.planner_version,
+            artifact_sha256=hashlib.sha256(canonical).hexdigest(),
+            prompt_sha256=prompt,
+        )
 
     def plan(self, question: str, snapshot: SchemaSnapshot) -> QueryPlan:
         if not question.strip():
@@ -302,29 +331,25 @@ class QueryPlanningRuntime:
         snapshot = self._data_source.snapshot()
         plan = planner.plan(question, snapshot)
         query = compile_query_plan(plan, snapshot=snapshot, source_id=self._source_id)
+        started = time.perf_counter()
         result = await self._executor.execute(
             query.sql, query.parameters, dialect=query.dialect
         )
+        execution_ms = (time.perf_counter() - started) * 1_000
         evidence = create_execution_evidence(
             sql=query.sql,
             dialect=query.dialect,
             result=result,
             source_id=query.source_id,
             schema_fingerprint=query.schema_fingerprint,
-            execution_ms=0.0,
+            execution_ms=execution_ms,
         )
         sequence = self._evidence_store.append(evidence)
-        identity_payload = json.dumps(
-            {"id": planner.planner_id, "version": planner.planner_version},
-            sort_keys=True, separators=(",", ":"),
-        ).encode("utf-8")
-        planner_digest = hashlib.sha256(identity_payload).hexdigest()
+        identity = planner.identity
         return QueryPlanningResult(
             query=query,
             result=result,
             evidence_id=evidence.evidence_id,
             evidence_sequence=sequence,
-            planner_reference=(
-                f"{planner.planner_id}@{planner.planner_version}#sha256:{planner_digest}"
-            ),
+            planner_reference=identity.reference,
         )
