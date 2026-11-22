@@ -18,7 +18,7 @@ def database_path(tmp_path: Path) -> Path:
     return path
 
 
-def test_persistent_database_opens_read_only_and_discovers_tables(database_path):
+def test_persistent_database_opens_read_only_and_discovers_tables(database_path: Path) -> None:
     with DuckDBConnector(database_path) as source:
         tables = source.list_tables()
         assert [(item.schema, item.name, item.table_type) for item in tables] == [
@@ -28,7 +28,7 @@ def test_persistent_database_opens_read_only_and_discovers_tables(database_path)
         assert {item.name for item in all_relations} == {"orders", "large_orders"}
 
 
-def test_describe_table_returns_ordered_column_metadata(database_path):
+def test_describe_table_returns_ordered_column_metadata(database_path: Path) -> None:
     with DuckDBConnector(database_path) as source:
         result = source.describe_table("main", "orders")
     assert [column.name for column in result.columns] == ["id", "amount", "note"]
@@ -37,14 +37,14 @@ def test_describe_table_returns_ordered_column_metadata(database_path):
     assert result.columns[1].data_type == "DECIMAL(12,2)"
 
 
-def test_unknown_table_fails_closed(database_path):
+def test_unknown_table_fails_closed(database_path: Path) -> None:
     with DuckDBConnector(database_path) as source, pytest.raises(
         DuckDBConnectorError, match="not found"
     ):
         source.describe_table("main", "missing")
 
 
-def test_schema_fingerprint_is_stable_and_changes_with_schema(database_path):
+def test_schema_fingerprint_is_stable_and_changes_with_schema(database_path: Path) -> None:
     with DuckDBConnector(database_path) as source:
         first = source.snapshot()
         second = source.snapshot()
@@ -59,13 +59,13 @@ def test_schema_fingerprint_is_stable_and_changes_with_schema(database_path):
     assert changed.fingerprint != first.fingerprint
 
 
-def test_connector_requires_open_before_inspection():
+def test_connector_requires_open_before_inspection() -> None:
     source = DuckDBConnector()
     with pytest.raises(DuckDBConnectorError, match="not open"):
         source.list_tables()
 
 
-def test_metadata_queries_do_not_accept_identifier_injection(database_path):
+def test_metadata_queries_do_not_accept_identifier_injection(database_path: Path) -> None:
     with DuckDBConnector(database_path) as source, pytest.raises(
         DuckDBConnectorError, match="not found"
     ):
