@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import threading
 from io import StringIO
@@ -29,7 +30,7 @@ def test_shared_service_executes_query_and_records_history(catalog: Path, tmp_pa
         catalog_path=str(catalog), evidence_path=str(tmp_path / "evidence.sqlite")
     )
     try:
-        result = __import__("asyncio").run(service.query("count rows in orders"))
+        result = asyncio.run(service.query("count rows in orders"))
         assert result["rows"] == [[2]]
         assert result["evidence_id"]
         assert service.history()[0]["question"] == "count rows in orders"
