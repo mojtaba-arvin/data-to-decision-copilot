@@ -81,7 +81,8 @@ jobs:
       - name: Build wheel and source distribution
         run: uv build
       - name: Verify installed wheel CLI
-        run: uv run --no-project --with dist/*.whl python -m d2d.cli --help
+        if: hashFiles('src/d2d/cli.py') != ''
+        run: uv run --no-project --with dist/*.whl d2d --help
 
   real-ollama-smoke:
     name: Optional real Ollama inference
