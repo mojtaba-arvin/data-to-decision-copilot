@@ -181,8 +181,6 @@ class DuckDBQueryExecutor:
             ) from exc
         except asyncio.CancelledError:
             interrupt_this_query()
-            try:
+            with contextlib.suppress(QueryExecutionError):
                 await worker
-            except QueryExecutionError:
-                pass
             raise
