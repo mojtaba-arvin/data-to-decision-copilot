@@ -1,5 +1,5 @@
 """Typed, provider-independent contracts for evidence-backed decisions."""
-
+from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
@@ -18,7 +18,7 @@ class EvidenceStatus(StrEnum):
 
 
 class Evidence(BaseModel):
-    """A query and its observed result metadata; values are never inferred."""
+    """Immutable server-created record of an execution and its captured output."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -27,17 +27,37 @@ class Evidence(BaseModel):
     dialect: str = Field(min_length=1)
     status: EvidenceStatus
     columns: tuple[str, ...] = ()
-    rows: tuple[dict[str, Any], ...] = ()
+    rows: tuple[tuple[Any, ...], ...] = ()
+    # Number of rows captured in this evidence object, never the total match count.
     row_count: int = Field(ge=0)
     execution_ms: float | None = Field(default=None, ge=0)
     data_version: str | None = None
+    source_id: str | None = None
+    schema_fingerprint: str | None = None
+    query_sha256: str | None = None
+    result_sha256: str | None = None
+    executed_at: datetime | None = None
+    output_bytes: int | None = Field(default=None, ge=0)
+    truncated: bool = False
 
     @model_validator(mode="after")
-    def require_rows_for_executed_evidence(self) -> "Evidence":
-        if self.status is EvidenceStatus.NOT_EXECUTED and self.rows:
-            raise ValueError("unexecuted evidence cannot contain result rows")
-        if self.status is EvidenceStatus.EXECUTED and self.row_count != len(self.rows):
-            raise ValueError("row_count must match the captured rows in this contract")
+    def validate_execution_metadata(self) -> "Evidence":
+        if self.status is EvidenceStatus.NOT_EXECUTED:
+            if self.rows or self.row_count:
+                raise ValueError("unexecuted evidence cannot contain result rows")
+            if self.executed_at is not None or self.result_sha256 is not None:
+                raise ValueError("unexecuted evidence cannot claim execution metadata")
+        else:
+            if self.row_count != len(self.rows):
+                raise ValueError("row_count must equal captured rows in this evidence")
+            if self.executed_at is None or self.query_sha256 is None or self.result_sha256 is None:
+                raise ValueError("executed evidence requires timestamp and content hashes")
+            if self.output_bytes is None:
+                raise ValueError("executed evidence requires output byte accounting")
+            if len(self.columns) == 0 and self.rows:
+                raise ValueError("rows cannot exist without column metadata")
+            if any(len(row) != len(self.columns) for row in self.rows):
+                raise ValueError("each captured row must match the column count")
         return self
 
 
