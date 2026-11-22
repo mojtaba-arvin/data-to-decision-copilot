@@ -9,7 +9,7 @@ operating system, CPU architecture, and Python minor version as the offline host
 Use Python 3.13 and a current `uv` installation:
 
 ```bash
-uv export --format requirements-txt --no-dev --no-emit-project -o requirements-runtime.txt
+uv export --locked --format requirements-txt --no-dev --no-emit-project -o requirements-runtime.txt
 python -m pip download --only-binary=:all: -r requirements-runtime.txt -d wheelhouse/
 uv build
 cp dist/*.whl wheelhouse/
