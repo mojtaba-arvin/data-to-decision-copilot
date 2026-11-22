@@ -17,7 +17,8 @@ def file_root(tmp_path: Path) -> Path:
 
 def test_csv_and_parquet_discovery_is_metadata_only(file_root: Path) -> None:
     with FileDataSource(file_root, ["orders.csv", "products.parquet"]) as source:
-        assert isinstance(source, DataSource)
+        typed_source: DataSource = source
+        assert typed_source.list_tables()
         relations = source.list_tables()
         assert [item.table_type for item in relations] == ["CSV", "PARQUET"]
         csv_schema = source.describe_table("main", "source_0001")
