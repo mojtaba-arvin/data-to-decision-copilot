@@ -59,6 +59,33 @@ def _numbers_in_text(value: str) -> set[str]:
             continue
     return numbers
 
+_NEGATION = re.compile(
+    r"\\b(?:not|no|never|isn't|aren't|wasn't|weren't|doesn't|don't|didn't|"
+    r"cannot|can't|without|false|نیست|نیستند|نبود|نبوده|نه|غیر)\\b|"
+    r"نمی(?:‌|\\s*)\\w+",
+    re.IGNORECASE,
+)
+
+
+def _fact_consistency_signature(statement: str) -> tuple[str, str | None, bool] | None:
+    """Conservatively detect direct same-template fact conflicts.
+
+    The check is intentionally narrow: it compares statements with at most one
+    numeric literal after removing explicit negation markers. It is not general
+    natural-language contradiction detection.
+    """
+    numbers = _numbers_in_text(statement)
+    if len(numbers) > 1:
+        return None
+    normalized = _NUMBER.sub(" value ", statement.casefold())
+    negated = _NEGATION.search(normalized) is not None
+    normalized = _NEGATION.sub(" ", normalized)
+    skeleton = " ".join(re.findall(r"\\w+", normalized))
+    if not skeleton:
+        return None
+    return skeleton, next(iter(numbers), None), negated
+
+
 def _literal_value_in_statement(value: object, statement: str) -> bool:
     """Check literal value grounding for FACT claims, not semantic entailment."""
     numeric: Decimal | None = None
@@ -239,7 +266,22 @@ def evaluate_policy(
                 "high confidence requires corroborating evidence from at least two distinct sources"
             )
 
+    fact_signatures: dict[str, tuple[str | None, bool, str]] = {}
     for claim in plan.claims:
+        if claim.kind is ClaimKind.FACT:
+            signature = _fact_consistency_signature(claim.statement)
+            if signature is not None:
+                skeleton, numeric_value, negated = signature
+                previous = fact_signatures.get(skeleton)
+                if previous is not None and (
+                    previous[0] != numeric_value or previous[1] != negated
+                ):
+                    violations.append(
+                        f"fact claims {previous[2]} and {claim.claim_id} are contradictory"
+                    )
+                else:
+                    fact_signatures[skeleton] = (numeric_value, negated, claim.claim_id)
+
         linked = [by_id[item] for item in claim.evidence_ids if item in by_id]
         if claim.kind is ClaimKind.FACT:
             values = (value for item in linked for row in item.rows for value in row)
