@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from d2d.core.contracts import ClaimKind, Confidence, Decision, DecisionClaim, Evidence
+from d2d.core.contracts import Alternative, ClaimKind, Confidence, Decision, DecisionClaim, Evidence
 from d2d.core.decision_trace_store import SQLiteDecisionTraceStore
 from d2d.core.evidence import create_execution_evidence
 from d2d.core.evidence_store import SQLiteEvidenceStore
@@ -216,3 +216,47 @@ def test_high_confidence_requires_two_distinct_evidence_sources():
     assert not one_source.allowed
     assert any("two distinct sources" in item for item in one_source.violations)
     assert two_sources.allowed
+
+
+def test_policy_can_require_decision_alternatives_and_tradeoffs():
+    evidence = make_evidence()
+    base = make_plan(evidence)
+    policy = DecisionPolicy(
+        policy_id="options-required", version="1", require_alternatives=True
+    )
+    rejected = evaluate_policy(base, evidence=(evidence,), policy=policy)
+    assert not rejected.allowed
+    assert any("requires at least one alternative" in item for item in rejected.violations)
+
+    decision = base.decision.model_copy(
+        update={
+            "alternatives": (
+                Alternative(
+                    action="Defer replenishment",
+                    trade_off="Preserves cash but increases stockout risk.",
+                ),
+            )
+        }
+    )
+    accepted = evaluate_policy(
+        DecisionPlan(decision=decision, claims=base.claims),
+        evidence=(evidence,),
+        policy=policy,
+    )
+    assert accepted.allowed
+
+
+def test_decision_rejects_alternative_that_duplicates_primary_action():
+    evidence = make_evidence()
+    base = make_plan(evidence)
+    with pytest.raises(ValueError, match="must not duplicate"):
+        base.decision.model_copy(
+            update={
+                "alternatives": (
+                    Alternative(
+                        action=base.decision.action,
+                        trade_off="No meaningful difference.",
+                    ),
+                )
+            }
+        )
