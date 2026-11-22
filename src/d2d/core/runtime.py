@@ -244,8 +244,10 @@ def evaluate_policy(
                 violations.append(
                     f"fact claim {claim.claim_id} has no literal value match in its linked evidence"
                 )
-        elif claim.kind is ClaimKind.RECOMMENDATION:
-            if claim.statement.strip().casefold() != decision.action.strip().casefold():
+        elif (
+            claim.kind is ClaimKind.RECOMMENDATION
+            and claim.statement.strip().casefold() != decision.action.strip().casefold()
+        ):
                 violations.append(
                     f"recommendation claim {claim.claim_id} must match the decision action"
                 )
