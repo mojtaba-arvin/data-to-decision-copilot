@@ -6,7 +6,7 @@ sales rows. It contains no real customer or production data.
 From the repository root:
 
 ```bash
-uv sync --all-groups
+uv sync --locked --all-groups
 uv run python examples/create_demo_catalog.py --output ./analytics.duckdb
 d2d schema --catalog ./analytics.duckdb
 d2d query --catalog ./analytics.duckdb --question "count rows in sales"
