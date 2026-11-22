@@ -23,7 +23,7 @@ from d2d.core.decision_trace import EvidenceStore, create_decision_trace
 from d2d.core.decision_trace_store import SQLiteDecisionTraceStore
 
 _NUMBER = re.compile(
-    r"(?<![\\w.])[-+]?(?:\\d{1,3}(?:,\\d{3})+|\\d+)(?:\\.\\d+)?%?(?![\\w.])"
+    r"(?<![\w.])[-+]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\\.\d+)?%?(?![\\w.])"
 )
 
 
