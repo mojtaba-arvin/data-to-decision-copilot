@@ -132,11 +132,7 @@ def test_verifier_detects_persisted_payload_tampering(tmp_path: Path):
     report = store.verify()
     assert not report.valid
     assert report.records_checked == 0
-    assert report.error in {
-        "invalid trace: ",
-        "decision trace digest mismatch",
-        "record digest mismatch",
-    } or report.error is not None
+    assert report.error == "decision trace digest mismatch"
 
 
 def test_replay_fails_closed_for_stale_schema(tmp_path: Path):
