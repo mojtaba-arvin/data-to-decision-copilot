@@ -76,9 +76,9 @@ def _literal_value_in_statement(value: object, statement: str) -> bool:
         return format(numeric, "f") in _numbers_in_text(statement)
     if isinstance(value, str) and len(value.strip()) >= 2:
         token = re.escape(value.strip())
-        return re.search(rf"(?<!\\w){token}(?!\\w)", statement, re.IGNORECASE) is not None
+        return re.search(rf"(?<!\w){token}(?!\w)", statement, re.IGNORECASE) is not None
     if isinstance(value, bool):
-        return re.search(rf"\\b{str(value).lower()}\\b", statement, re.IGNORECASE) is not None
+        return re.search(rf"\b{str(value).lower()}\b", statement, re.IGNORECASE) is not None
     return False
 
 
