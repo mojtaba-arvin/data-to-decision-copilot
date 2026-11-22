@@ -23,12 +23,8 @@ from d2d.core.query_planning import (
     QueryPlanningResult,
     QueryPlanningRuntime,
 )
-from d2d.core.runtime import (
-    DecisionPolicy,
-    DecisionRuntime,
-    Planner as DecisionPlanner,
-    RuntimeResult,
-)
+from d2d.core.runtime import DecisionPolicy, DecisionRuntime, RuntimeResult
+from d2d.core.runtime import Planner as DecisionPlanner
 
 
 class SemanticPlanningError(ValueError):
