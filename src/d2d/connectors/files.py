@@ -3,6 +3,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import stat
+import tempfile
 from pathlib import Path, PurePath
 from typing import Self
 
@@ -56,6 +59,7 @@ class FileDataSource:
         self._limits = limits or DiscoveryLimits()
         self._connection: duckdb.DuckDBPyConnection | None = None
         self._tables: tuple[TableInfo, ...] = ()
+        self._snapshot_dir: tempfile.TemporaryDirectory | None = None
 
     def __enter__(self) -> Self:
         return self.open()
@@ -66,6 +70,7 @@ class FileDataSource:
     def open(self) -> Self:
         if self._connection is not None:
             return self
+        snapshot_dir: tempfile.TemporaryDirectory | None = None
         try:
             if self._root_input.is_symlink():
                 raise FileSourceError("source root must not be a symlink")
@@ -84,8 +89,27 @@ class FileDataSource:
                 )
             if self._catalog_path != ":memory:":
                 catalog = Path(self._catalog_path)
+                if catalog.is_symlink():
+                    raise FileSourceError("catalog database must not be a symlink")
+                if catalog.exists() and not catalog.is_file():
+                    raise FileSourceError("catalog database must be a regular file")
                 if catalog.resolve() in validated_files:
                     raise FileSourceError("catalog database must not overwrite a source file")
+
+            # Snapshot through no-follow descriptors before DuckDB opens paths.
+            snapshot_dir = tempfile.TemporaryDirectory(prefix="d2d-file-snapshot-")
+            snapshot_root = Path(snapshot_dir.name)
+            snapshot_files: list[Path] = []
+            for index, relative in enumerate(self._files, start=1):
+                target = snapshot_root / f"source_{index:04d}{relative.suffix.lower()}"
+                self._copy_snapshot(root, relative, target)
+                snapshot_files.append(target)
+            snapshot_bytes = sum(path.stat().st_size for path in snapshot_files)
+            if snapshot_bytes > self._max_total_bytes:
+                raise FileSourceError(
+                    f"source files exceed max_total_bytes={self._max_total_bytes}"
+                )
+
             connection = duckdb.connect(self._catalog_path)
             catalog_name = (
                 "memory" if self._catalog_path == ":memory:"
@@ -93,7 +117,7 @@ class FileDataSource:
             )
             tables: list[TableInfo] = []
             try:
-                for index, path in enumerate(validated_files, start=1):
+                for index, path in enumerate(snapshot_files, start=1):
                     name = f"source_{index:04d}"
                     if path.suffix.lower() == ".csv":
                         relation = connection.read_csv(str(path), sample_size=self._csv_sample_size)
@@ -127,10 +151,15 @@ class FileDataSource:
                 )
             self._connection = connection
             self._tables = tuple(tables)
+            self._snapshot_dir = snapshot_dir
             return self
         except FileSourceError:
+            if snapshot_dir is not None:
+                snapshot_dir.cleanup()
             raise
         except (OSError, duckdb.Error, ValueError) as exc:
+            if snapshot_dir is not None:
+                snapshot_dir.cleanup()
             raise FileSourceError(f"could not open file source: {exc}") from exc
 
     @property
@@ -143,6 +172,9 @@ class FileDataSource:
             self._connection.close()
             self._connection = None
             self._tables = ()
+        if self._snapshot_dir is not None:
+            self._snapshot_dir.cleanup()
+            self._snapshot_dir = None
 
     def list_tables(self, *, include_views: bool = False) -> tuple[TableInfo, ...]:
         del include_views
@@ -202,6 +234,61 @@ class FileDataSource:
         if resolved.stat().st_size > self._max_file_bytes:
             raise FileSourceError(f"file exceeds max_file_bytes={self._max_file_bytes}")
         return resolved
+
+    def _copy_snapshot(self, root: Path, relative: Path, destination: Path) -> None:
+        """Copy one validated input through no-follow descriptors into private storage."""
+        nofollow = getattr(os, "O_NOFOLLOW", None)
+        directory = getattr(os, "O_DIRECTORY", None)
+        if nofollow is None or directory is None:
+            raise FileSourceError("secure file snapshots require O_NOFOLLOW and O_DIRECTORY")
+        directory_flags = os.O_RDONLY | nofollow | directory
+        file_flags = os.O_RDONLY | nofollow
+        root_fd = os.open(root, directory_flags)
+        current_fd = root_fd
+        file_fd: int | None = None
+        try:
+            parts = PurePath(relative).parts
+            for part in parts[:-1]:
+                next_fd = os.open(part, directory_flags, dir_fd=current_fd)
+                if current_fd != root_fd:
+                    os.close(current_fd)
+                current_fd = next_fd
+            file_fd = os.open(parts[-1], file_flags, dir_fd=current_fd)
+            before = os.fstat(file_fd)
+            if not stat.S_ISREG(before.st_mode):
+                raise FileSourceError("source path must be a regular file")
+            if before.st_size > self._max_file_bytes:
+                raise FileSourceError(
+                    f"file exceeds max_file_bytes={self._max_file_bytes}"
+                )
+            copied = 0
+            with os.fdopen(file_fd, "rb") as source:
+                file_fd = None
+                with destination.open("xb") as target:
+                    while chunk := source.read(1024 * 1024):
+                        copied += len(chunk)
+                        if copied > self._max_file_bytes:
+                            raise FileSourceError(
+                                f"file exceeds max_file_bytes={self._max_file_bytes}"
+                            )
+                        target.write(chunk)
+                after = os.fstat(source.fileno())
+            before_identity = (
+                before.st_dev, before.st_ino, before.st_size,
+                before.st_mtime_ns, before.st_ctime_ns,
+            )
+            after_identity = (
+                after.st_dev, after.st_ino, after.st_size,
+                after.st_mtime_ns, after.st_ctime_ns,
+            )
+            if copied != before.st_size or before_identity != after_identity:
+                raise FileSourceError("source file changed while creating its snapshot")
+        finally:
+            if file_fd is not None:
+                os.close(file_fd)
+            if current_fd != root_fd:
+                os.close(current_fd)
+            os.close(root_fd)
 
     def _require_connection(self) -> duckdb.DuckDBPyConnection:
         if self._connection is None:
