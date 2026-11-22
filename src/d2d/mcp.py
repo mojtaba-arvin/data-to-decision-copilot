@@ -16,6 +16,7 @@ def run_stdio(
     source = reader or sys.stdin
     sink = writer or sys.stdout
     for line in source:
+        request: object = None
         try:
             request = json.loads(line)
             if not isinstance(request, dict):
