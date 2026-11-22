@@ -5,7 +5,6 @@ import asyncio
 import ipaddress
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Type
 
 from d2d.application import CopilotService
 
@@ -80,5 +79,5 @@ def create_server(
         def log_message(self, format: str, *args: object) -> None:
             return
 
-    handler: Type[BaseHTTPRequestHandler] = Handler
+    handler: type[BaseHTTPRequestHandler] = Handler
     return ThreadingHTTPServer((host, port), handler)
