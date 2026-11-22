@@ -34,6 +34,7 @@ class FileDataSource:
                  max_total_bytes: int = 256 * 1024 * 1024,
                  csv_sample_size: int = 20_480,
                  catalog_path: str | Path = ":memory:",
+                 memory_limit: str = "256MB",
                  limits: DiscoveryLimits | None = None) -> None:
         if max_file_bytes < 1:
             raise ValueError("max_file_bytes must be at least 1")
@@ -41,6 +42,8 @@ class FileDataSource:
             raise ValueError("max_total_bytes must be at least 1")
         if not str(catalog_path):
             raise ValueError("catalog_path must not be empty")
+        if not memory_limit:
+            raise ValueError("memory_limit must not be empty")
         if csv_sample_size < 1:
             raise ValueError("csv_sample_size must be at least 1")
         self._root_input = Path(root)
@@ -49,6 +52,7 @@ class FileDataSource:
         self._max_total_bytes = max_total_bytes
         self._csv_sample_size = csv_sample_size
         self._catalog_path = str(catalog_path)
+        self._memory_limit = memory_limit
         self._limits = limits or DiscoveryLimits()
         self._connection: duckdb.DuckDBPyConnection | None = None
         self._tables: tuple[TableInfo, ...] = ()
@@ -102,6 +106,21 @@ class FileDataSource:
             except Exception:
                 connection.close()
                 raise
+            if self._catalog_path != ":memory:":
+                connection.close()
+                connection = duckdb.connect(
+                    self._catalog_path,
+                    read_only=True,
+                    config={
+                        "enable_external_access": "false",
+                        "allow_unsigned_extensions": "false",
+                        "autoinstall_known_extensions": "false",
+                        "autoload_known_extensions": "false",
+                        "threads": "1",
+                        "memory_limit": self._memory_limit,
+                        "max_temp_directory_size": "0B",
+                    },
+                )
             self._connection = connection
             self._tables = tuple(tables)
             return self
