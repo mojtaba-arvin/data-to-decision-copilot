@@ -5,7 +5,6 @@ An open-source, read-only analytics copilot that turns natural-language question
 > Status: early development. The current milestone establishes the Python core contracts and SQL safety boundary; it is not yet a production-ready analytics agent.
 
 ## Design principles
-
 - **Evidence before explanation:** every reported metric must trace to an executed query or a recorded deterministic calculation.
 - **Read-only by construction:** generated SQL is parsed and constrained to a single read-only query; database credentials must independently enforce read-only access.
 - **Honest uncertainty:** insufficient, ambiguous, or unavailable evidence must produce an explicit abstention rather than an invented answer.
@@ -13,25 +12,18 @@ An open-source, read-only analytics copilot that turns natural-language question
 - **Multilingual from day one:** language is preserved through the pipeline; presentation layers must support RTL and ICU localization.
 
 ## Repository status
+- Typed Pydantic v2 decision and evidence contracts.
+- AST-based SQL validation using SQLGlot.
+- Read-only DuckDB catalog discovery and bounded CSV/Parquet metadata sources.
+- A bounded DuckDB executor with read-only file access, conservative function allowlisting, query interruption, and row/byte ceilings.
+- Phase 5 immutable execution-derived evidence with query/result digests and source/schema provenance.
+- Phase 6 durable local SQLite journal with transactional sequencing, append-only triggers, and independent chain verification.
+- Deterministic tests that do not call an LLM or access a network.
 
-The first implementation milestone is deliberately small:
-
-- Typed decision and evidence contracts (Pydantic v2).
-- AST-based SQL validation using SQLGlot (no regex-based SQL security).
-- Read-only DuckDB catalog discovery for persistent database files.
-- A structural DataSource protocol shared by metadata adapters.
-- Bounded relation and column discovery; limit violations fail closed.
-- Explicit CSV/Parquet metadata sources with root confinement, symlink rejection, file-size ceilings, and bounded CSV inference.
-- A separate bounded DuckDB executor with read-only file access, conservative SQL function allowlisting, query interruption, and row/serialized-byte output ceilings (Phase 4 draft).
-- Table/view and column metadata plus deterministic schema fingerprints.
-- Deterministic unit tests that do not call an LLM or access a network.
-
-Server-side immutable execution evidence with query/result digests, UTC timestamps, source/schema provenance, captured-row semantics, and truncation metadata is implemented in the Phase 5 draft. Durable evidence storage/signatures, planner, verifier, API, MCP server, UI, and benchmark suites remain future milestones.
+The journal is a local persistence adapter, not a distributed production ledger.
 
 ## Development
-
-Requires Python 3.13+ and [uv](https://docs.astral.sh/uv/).
-
+Requires Python 3.13+ and uv.
 ```bash
 uv sync --all-groups
 uv run pytest
@@ -40,9 +32,9 @@ uv run pyright
 ```
 
 ## Security boundary
+SQL validation is defense in depth, not a replacement for database-enforced read-only credentials, OS-level isolation, or network policy. The DuckDB memory ceiling is not an OS process sandbox. Never connect this project to production using a privileged account.
 
-SQL validation is defense in depth, **not** a replacement for database-enforced read-only credentials, OS-level isolation, or network policy. The Phase 4 DuckDB executor applies per-query deadlines via DuckDB interruption, disables external access and extension loading, and bounds fetched output; its memory ceiling is not an OS process sandbox. Never connect this project to a production database using a privileged account. Query results and schema descriptions are untrusted data, not instructions.
+Journal limitations and operating guidance are documented in [Spec 0007](docs/specs/0007-evidence-journal.md) and [ADR 0007](docs/adr/0007-evidence-journal.md).
 
 ## License
-
 MIT. See [LICENSE](LICENSE).
