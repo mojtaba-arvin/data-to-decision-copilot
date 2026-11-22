@@ -1,4 +1,5 @@
 import sqlite3
+from contextlib import closing
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -49,7 +50,7 @@ def test_duplicate_ids_are_rejected_atomically(tmp_path: Path):
 def test_update_and_delete_are_blocked(tmp_path: Path):
     store = SQLiteEvidenceStore(tmp_path / "evidence.sqlite")
     store.append(make_evidence())
-    with sqlite3.connect(store.path) as connection:
+    with closing(sqlite3.connect(store.path)) as connection:
         with pytest.raises(sqlite3.IntegrityError, match="append-only"):
             connection.execute("UPDATE evidence_journal SET payload = '{}' WHERE sequence = 1")
         with pytest.raises(sqlite3.IntegrityError, match="append-only"):
@@ -74,6 +75,7 @@ def test_verifier_detects_payload_tampering(tmp_path: Path):
         connection.execute(
             "UPDATE evidence_journal SET payload = replace(payload, 'SELECT 7', 'SELECT 8')"
         )
+        connection.commit()
     report = store.verify()
     assert not report.valid
     assert report.records_checked == 0
