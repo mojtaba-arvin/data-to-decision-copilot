@@ -191,7 +191,7 @@ def test_model_planner_runs_only_through_bounded_runtime_and_persists_evidence(
         assert result.evidence_sequence == 1
         evidence = store.get(result.evidence_id)
         assert evidence is not None
-        assert evidence.rows == (("2",),)
+        assert evidence.rows == ((2,),)
         assert store.verify().valid
     finally:
         source.close()
