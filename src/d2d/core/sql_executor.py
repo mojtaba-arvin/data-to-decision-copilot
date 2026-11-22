@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import threading
@@ -173,10 +174,8 @@ class DuckDBQueryExecutor:
             )
         except TimeoutError as exc:
             interrupt_this_query()
-            try:
+            with contextlib.suppress(QueryExecutionError):
                 await worker
-            except QueryExecutionError:
-                pass
             raise QueryTimeoutError(
                 f"query exceeded {self._limits.timeout_seconds:g}s and was interrupted"
             ) from exc
