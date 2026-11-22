@@ -61,7 +61,7 @@ def _numbers_in_text(value: str) -> set[str]:
 
 _NEGATION = re.compile(
     r"\b(?:not|no|never|isn't|aren't|wasn't|weren't|doesn't|don't|didn't|"
-    r"cannot|can't|without|false|نیست|نیستند|نبود|نبوده|نه|غیر)\\b|"
+    r"cannot|can't|without|false|نیست|نیستند|نبود|نبوده|نه|غیر)\b|"
     r"نمی(?:‌|\s*)\w+",
     re.IGNORECASE,
 )
