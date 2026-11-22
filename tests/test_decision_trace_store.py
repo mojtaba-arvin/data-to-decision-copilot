@@ -122,7 +122,7 @@ def test_verifier_detects_persisted_payload_tampering(tmp_path: Path):
     store = SQLiteDecisionTraceStore(tmp_path / "traces.sqlite")
     store.append(trace)
 
-    with sqlite3.connect(store.path) as connection:
+    with closing(sqlite3.connect(store.path)) as connection:
         connection.execute("DROP TRIGGER decision_trace_no_update")
         connection.execute(
             "UPDATE decision_trace_journal SET payload = replace(payload, 'Review replenishment', 'Altered action')"
