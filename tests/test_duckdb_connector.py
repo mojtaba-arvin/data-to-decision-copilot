@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import duckdb
 import pytest
 
@@ -5,7 +7,7 @@ from d2d.connectors.duckdb import DuckDBConnector, DuckDBConnectorError
 
 
 @pytest.fixture
-def database_path(tmp_path):
+def database_path(tmp_path: Path) -> Path:
     path = tmp_path / "analytics.duckdb"
     connection = duckdb.connect(str(path))
     connection.execute(
