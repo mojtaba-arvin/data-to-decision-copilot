@@ -26,7 +26,7 @@ The first implementation milestone is deliberately small:
 - Table/view and column metadata plus deterministic schema fingerprints.
 - Deterministic unit tests that do not call an LLM or access a network.
 
-Execution-derived evidence generation, planner, verifier, API, MCP server, UI, and benchmark suites remain future milestones.
+Server-side immutable execution evidence with query/result digests, UTC timestamps, source/schema provenance, captured-row semantics, and truncation metadata is implemented in the Phase 5 draft. Durable evidence storage/signatures, planner, verifier, API, MCP server, UI, and benchmark suites remain future milestones.
 
 ## Development
 
