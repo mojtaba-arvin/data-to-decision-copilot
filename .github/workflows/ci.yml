@@ -123,3 +123,22 @@ jobs:
         env:
           D2D_OLLAMA_MODEL: qwen3:8b
         run: uv run python scripts/ollama_smoke.py
+
+  lockfile:
+    name: Generate dependency lockfile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Resolve exact dependency versions
+        run: uv lock
+      - name: Export lockfile artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: resolved-uv-lock
+          path: uv.lock
+          if-no-files-found: error
+          retention-days: 1
