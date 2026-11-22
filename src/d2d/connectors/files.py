@@ -10,7 +10,6 @@ import duckdb
 
 from d2d.connectors.base import (
     ColumnInfo,
-    DataSource,
     DiscoveryLimits,
     SchemaSnapshot,
     TableInfo,
@@ -162,7 +161,3 @@ class FileDataSource:
         if self._connection is None:
             raise FileSourceError("file source is not open; use open() or a context manager")
         return self._connection
-
-def _implements_data_source(source: FileDataSource) -> DataSource:
-    """Keep the structural contract checked by static type analysis."""
-    return source
