@@ -36,9 +36,13 @@ class DuckDBConnector:
         database: str | Path = ":memory:",
         *,
         limits: DiscoveryLimits | None = None,
+        memory_limit: str = "256MB",
     ) -> None:
+        if not memory_limit:
+            raise ValueError("memory_limit must not be empty")
         self._database = str(database)
         self._limits = limits or DiscoveryLimits()
+        self._memory_limit = memory_limit
         self._connection: duckdb.DuckDBPyConnection | None = None
 
     def __enter__(self) -> Self:
@@ -55,6 +59,15 @@ class DuckDBConnector:
             self._connection = duckdb.connect(
                 self._database,
                 read_only=not in_memory,
+                config={
+                    "enable_external_access": "false",
+                    "allow_unsigned_extensions": "false",
+                    "autoinstall_known_extensions": "false",
+                    "autoload_known_extensions": "false",
+                    "threads": "1",
+                    "memory_limit": self._memory_limit,
+                    "max_temp_directory_size": "0B",
+                },
             )
         except (duckdb.Error, OSError) as exc:
             raise DuckDBConnectorError(f"could not open DuckDB source: {exc}") from exc
