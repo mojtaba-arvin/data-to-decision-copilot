@@ -217,14 +217,24 @@ def test_csv_file_source_executes_through_shared_read_only_catalog(tmp_path: Pat
         assert result.result.rows == ((2,),)
 
 
-def test_runtime_rejects_schema_change_during_planning(source_db: Path, tmp_path: Path) -> None:
+def test_runtime_rejects_schema_change_during_planning(tmp_path: Path) -> None:
+    from d2d.connectors.files import FileDataSource
     from d2d.core.query_planning import QueryPlannerIdentity
 
-    source = DuckDBConnector(source_db)
+    root = tmp_path / "drift-input"
+    root.mkdir()
+    (root / "orders.csv").write_text("id,amount\\n1,10.5\\n", encoding="utf-8")
+    source = FileDataSource(root, ["orders.csv"])
     source.open()
     try:
         snapshot = source.snapshot()
-        plan = make_plan(snapshot, filters=(), order_by=())
+        plan = QueryPlan(
+            schema_name="main",
+            table_name="source_0001",
+            schema_fingerprint=snapshot.fingerprint,
+            aggregates=(AggregateSpec(function=AggregateFunction.COUNT, alias="row_count"),),
+            limit=1,
+        )
         delegate = DeterministicQueryPlanner(plan)
 
         class MutatingPlanner:
@@ -233,13 +243,16 @@ def test_runtime_rejects_schema_change_during_planning(source_db: Path, tmp_path
                 return delegate.identity
 
             def plan(self, question: str, current: SchemaSnapshot) -> QueryPlan:
-                source._connection.execute("ALTER TABLE orders ADD COLUMN changed INTEGER")
+                assert source._connection is not None
+                source._connection.execute(
+                    'ALTER TABLE "source_0001" ADD COLUMN changed INTEGER'
+                )
                 return delegate.plan(question, current)
 
         runtime = QueryPlanningRuntime(
-            source_id="sales",
+            source_id="file-orders",
             data_source=source,
-            executor=DuckDBQueryExecutor(source_db),
+            executor=DuckDBQueryExecutor(),
             evidence_store=SQLiteEvidenceStore(tmp_path / "drift.sqlite"),
         )
         with pytest.raises(QueryPlanningError, match="schema changed during planning"):
