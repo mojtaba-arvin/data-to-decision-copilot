@@ -217,42 +217,39 @@ def test_csv_file_source_executes_through_shared_read_only_catalog(tmp_path: Pat
         assert result.result.rows == ((2,),)
 
 
-def test_runtime_rejects_schema_change_during_planning(tmp_path: Path) -> None:
-    from d2d.connectors.files import FileDataSource
+def test_runtime_rejects_schema_change_during_planning(
+    source_db: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from d2d.core.query_planning import QueryPlannerIdentity
 
-    root = tmp_path / "drift-input"
-    root.mkdir()
-    (root / "orders.csv").write_text("id,amount\\n1,10.5\\n", encoding="utf-8")
-    source = FileDataSource(root, ["orders.csv"])
+    source = DuckDBConnector(source_db)
     source.open()
     try:
         snapshot = source.snapshot()
-        plan = QueryPlan(
-            schema_name="main",
-            table_name="source_0001",
-            schema_fingerprint=snapshot.fingerprint,
-            aggregates=(AggregateSpec(function=AggregateFunction.COUNT, alias="row_count"),),
-            limit=1,
-        )
+        plan = make_plan(snapshot, filters=(), order_by=())
         delegate = DeterministicQueryPlanner(plan)
+        calls = 0
+
+        def changed_snapshot(*, include_views: bool = False) -> SchemaSnapshot:
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                return snapshot
+            return SchemaSnapshot(tables=snapshot.tables, fingerprint="0" * 64)
 
         class MutatingPlanner:
             @property
             def identity(self) -> QueryPlannerIdentity:
                 return delegate.identity
 
-            def plan(self, question: str, current: SchemaSnapshot) -> QueryPlan:
-                assert source._connection is not None
-                source._connection.execute(
-                    'ALTER TABLE "source_0001" ADD COLUMN changed INTEGER'
-                )
-                return delegate.plan(question, current)
+            def plan(self, question: str, snapshot: SchemaSnapshot) -> QueryPlan:
+                return delegate.plan(question, snapshot)
 
+        monkeypatch.setattr(source, "snapshot", changed_snapshot)
         runtime = QueryPlanningRuntime(
-            source_id="file-orders",
+            source_id="sales",
             data_source=source,
-            executor=DuckDBQueryExecutor(),
+            executor=DuckDBQueryExecutor(source_db),
             evidence_store=SQLiteEvidenceStore(tmp_path / "drift.sqlite"),
         )
         with pytest.raises(QueryPlanningError, match="schema changed during planning"):
