@@ -1,9 +1,7 @@
 """Shared application service used by the REST, CLI, and MCP interfaces."""
 from __future__ import annotations
 
-from collections import deque
 from datetime import UTC, datetime
-from threading import Lock
 from typing import cast
 
 from d2d.connectors.base import DataSource
@@ -14,6 +12,7 @@ from d2d.core.ollama_provider import OllamaStructuredPlanProvider
 from d2d.core.query_planning import QueryPlanner, QueryPlanningRuntime
 from d2d.core.semantic_planning import RuleBasedSemanticPlanner
 from d2d.core.sql_executor import DuckDBQueryExecutor
+from d2d.query_history import QueryHistoryItem, SQLiteQueryHistoryStore
 
 
 class CopilotService:
@@ -27,11 +26,10 @@ class CopilotService:
         evidence_store: SQLiteEvidenceStore,
         planner: QueryPlanner,
         source_id: str,
-        history_limit: int = 100,
+        history_store: SQLiteQueryHistoryStore,
     ) -> None:
-        if history_limit < 1:
-            raise ValueError("history_limit must be positive")
         self._source = source
+        self._history_store = history_store
         self._planner = planner
         self._runtime = QueryPlanningRuntime(
             source_id=source_id,
@@ -39,8 +37,6 @@ class CopilotService:
             executor=executor,
             evidence_store=evidence_store,
         )
-        self._history: deque[dict[str, object]] = deque(maxlen=history_limit)
-        self._history_lock = Lock()
 
     async def query(self, question: str) -> dict[str, object]:
         """Execute one natural-language query and return its evidence metadata."""
@@ -59,15 +55,16 @@ class CopilotService:
             "prompt_sha256": result.prompt_sha256,
             "created_at": datetime.now(UTC).isoformat(),
         }
-        history_item = {
-            key: response[key]
-            for key in (
-                "question", "evidence_id", "evidence_sequence",
-                "schema_fingerprint", "planner_reference", "created_at",
+        self._history_store.append(
+            QueryHistoryItem(
+                question=question,
+                evidence_id=result.evidence_id,
+                evidence_sequence=result.evidence_sequence,
+                schema_fingerprint=result.query.schema_fingerprint,
+                planner_reference=result.planner_reference,
+                created_at=str(response["created_at"]),
             )
-        }
-        with self._history_lock:
-            self._history.appendleft(history_item)
+        )
         return response
 
     def schema(self) -> dict[str, object]:
@@ -93,20 +90,21 @@ class CopilotService:
             ],
         }
 
-    def history(self) -> list[dict[str, object]]:
-        with self._history_lock:
-            return [dict(item) for item in self._history]
+    def history(self, *, limit: int = 100) -> list[dict[str, object]]:
+        return [item.as_dict() for item in self._history_store.list(limit=limit)]
 
     def close(self) -> None:
         """Close the owned DuckDB catalog connection."""
         if isinstance(self._source, DuckDBConnector):
             self._source.close()
+        self._history_store.close()
 
 
 def build_service(
     *,
     catalog_path: str,
     evidence_path: str = "d2d-evidence.sqlite",
+    history_path: str = "d2d-history.sqlite",
     provider: str = "rules",
     model: str = "qwen3:8b",
 ) -> CopilotService:
@@ -131,6 +129,7 @@ def build_service(
         evidence_store=SQLiteEvidenceStore(evidence_path),
         planner=planner,
         source_id="analytics-catalog",
+        history_store=SQLiteQueryHistoryStore(history_path),
     )
 
 
