@@ -91,6 +91,11 @@ class Decision(BaseModel):
     def validate_unique_evidence_ids(self) -> "Decision":
         if len(self.evidence_ids) != len(set(self.evidence_ids)):
             raise ValueError("decision evidence IDs must be unique")
+        actions = [self.action.strip().casefold()] + [
+            item.action.strip().casefold() for item in self.alternatives
+        ]
+        if len(actions) != len(set(actions)):
+            raise ValueError("decision alternatives must not duplicate the selected action")
         return self
 
 
