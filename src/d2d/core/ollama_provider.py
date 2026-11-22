@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import ipaddress
 import json
-import socket
 from dataclasses import dataclass
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
@@ -72,7 +71,7 @@ class OllamaStructuredPlanProvider(StructuredPlanProvider):
             raise OllamaProviderError(
                 f"Ollama returned HTTP {exc.code}: {detail}"
             ) from exc
-        except (URLError, TimeoutError, socket.timeout, OSError) as exc:
+        except (URLError, TimeoutError, OSError) as exc:
             raise OllamaProviderError("Ollama request failed or timed out") from exc
 
         if len(envelope) > _MAX_ENVELOPE_BYTES:
