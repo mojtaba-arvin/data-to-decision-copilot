@@ -21,7 +21,6 @@ from d2d.core.query_planning import (
     compile_query_plan,
 )
 from d2d.core.sql_executor import DuckDBQueryExecutor
-from d2d.core.sql_guard import SQLValidationError
 
 
 @pytest.fixture
@@ -143,7 +142,7 @@ def test_query_plan_runtime_executes_and_persists_real_evidence(
                 DeterministicQueryPlanner(plan),
             )
             assert outcome.result.columns == ("region", "total")
-            assert outcome.result.rows == (("south", 30), ("north", 30))
+            assert outcome.result.rows == (("north", 30), ("south", 30))
             assert outcome.evidence_sequence == 1
             saved = store.get(outcome.evidence_id)
             assert saved is not None
@@ -152,6 +151,8 @@ def test_query_plan_runtime_executes_and_persists_real_evidence(
             assert saved.schema_fingerprint == snapshot.fingerprint
             assert store.verify().valid
             assert outcome.planner_reference.startswith("deterministic-query-plan@1#sha256:")
+            assert len(outcome.prompt_sha256) == 64
+            assert saved.execution_ms is not None and saved.execution_ms > 0
         finally:
             source.close()
     asyncio.run(scenario())
