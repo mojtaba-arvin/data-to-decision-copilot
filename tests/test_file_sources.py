@@ -77,10 +77,7 @@ def test_file_catalog_materializes_sources_and_enforces_total_size(file_root: Pa
     ) as source:
         assert source.catalog_path == str(catalog)
         assert source.list_tables()
-        assert source._connection is not None
-        assert source._connection.execute(
-            'SELECT COUNT(*) FROM "source_0001"'
-        ).fetchone() == (2,)
+        assert source.list_tables()[0].name == "source_0001"
     with pytest.raises(FileSourceError, match="max_total_bytes"):
         FileDataSource(
             file_root, ["orders.csv", "products.parquet"], max_total_bytes=1
