@@ -87,3 +87,21 @@ def test_rejects_invalid_limits() -> None:
         ExecutionLimits(max_rows=0)
     with pytest.raises(ValueError):
         ExecutionLimits(max_bytes=0)
+
+
+def test_task_cancellation_interrupts_worker_before_next_query() -> None:
+    async def scenario() -> None:
+        executor = DuckDBQueryExecutor(
+            limits=ExecutionLimits(timeout_seconds=5, max_rows=5, max_bytes=1024)
+        )
+        task = asyncio.create_task(
+            executor.execute("SELECT sum(i) FROM range(100000000000) AS t(i)")
+        )
+        await asyncio.sleep(0.1)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        result = await executor.execute("SELECT 7 AS answer")
+        assert result.rows == ((7,),)
+
+    asyncio.run(scenario())
