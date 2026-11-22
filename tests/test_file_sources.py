@@ -1,6 +1,8 @@
 from pathlib import Path
+
 import duckdb
 import pytest
+
 from d2d.connectors.base import DataSource, DiscoveryLimits
 from d2d.connectors.files import FileDataSource, FileSourceError
 
