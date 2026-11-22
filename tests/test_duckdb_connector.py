@@ -125,3 +125,8 @@ def test_duckdb_connector_satisfies_data_source_protocol(database_path: Path) ->
         assert source.snapshot().fingerprint
     finally:
         connector.close()
+
+
+def test_connector_rejects_empty_memory_limit() -> None:
+    with pytest.raises(ValueError, match="memory_limit"):
+        DuckDBConnector(memory_limit="")
