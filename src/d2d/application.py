@@ -1,7 +1,6 @@
 """Shared application service used by the REST, CLI, and MCP interfaces."""
 from __future__ import annotations
 
-import asyncio
 from collections import deque
 from datetime import UTC, datetime
 from threading import Lock
