@@ -261,3 +261,21 @@ def test_decision_rejects_alternative_that_duplicates_primary_action():
                 ),
             }
         )
+
+
+@pytest.mark.parametrize(
+    ("value", "statement"),
+    [
+        ("north", "The region is north."),
+        (True, "The control is true."),
+    ],
+)
+def test_fact_claim_matches_string_and_boolean_literals(value: object, statement: str):
+    evidence = make_evidence().model_copy(update={"rows": ((value,),)})
+    base = make_plan(evidence, statement=statement)
+    fact = base.claims[0].model_copy(update={"kind": ClaimKind.FACT})
+    plan = DecisionPlan(decision=base.decision, claims=(fact,))
+    report = evaluate_policy(
+        plan, evidence=(evidence,), policy=DecisionPolicy(policy_id="literal-values", version="1")
+    )
+    assert report.allowed, report.violations
