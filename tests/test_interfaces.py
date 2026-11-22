@@ -110,5 +110,9 @@ def test_rest_server_refuses_non_loopback_bind(catalog: Path, tmp_path: Path) ->
     try:
         with pytest.raises(ValueError, match="loopback"):
             create_server(service, host="0.0.0.0")
+        with pytest.raises(ValueError, match="max_concurrent_queries"):
+            create_server(service, max_concurrent_queries=0)
+        with pytest.raises(ValueError, match="max_concurrent_queries"):
+            create_server(service, max_concurrent_queries=33)
     finally:
         service.close()
