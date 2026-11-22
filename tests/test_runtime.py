@@ -250,13 +250,14 @@ def test_decision_rejects_alternative_that_duplicates_primary_action():
     evidence = make_evidence()
     base = make_plan(evidence)
     with pytest.raises(ValueError, match="must not duplicate"):
-        base.decision.model_copy(
-            update={
+        Decision.model_validate(
+            {
+                **base.decision.model_dump(),
                 "alternatives": (
-                    Alternative(
-                        action=base.decision.action,
-                        trade_off="No meaningful difference.",
-                    ),
-                )
+                    {
+                        "action": base.decision.action,
+                        "trade_off": "No meaningful difference.",
+                    },
+                ),
             }
         )
