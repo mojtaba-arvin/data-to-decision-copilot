@@ -118,7 +118,7 @@ def test_rejects_schema_fingerprint_mismatch(snapshot: SchemaSnapshot) -> None:
 
 
 def test_rejects_unknown_column_before_runtime_compilation(snapshot: SchemaSnapshot) -> None:
-    adapter, _ = planner(json.dumps(make_plan(snapshot, columns=["secret"])))
+    adapter, _ = planner(json.dumps(make_plan(snapshot, columns=["secret"], aggregates=[], group_by=[])))
     # The existing compiler remains authoritative for identifier validation.
     result = adapter.plan("show secret from orders", snapshot)
     with pytest.raises(QueryPlanningError, match="unknown columns"):
