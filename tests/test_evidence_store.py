@@ -36,7 +36,7 @@ def test_append_round_trip_and_verify(tmp_path: Path):
     assert store.verify().valid
 
 
-def test_duplicate_ids_are_rejected_atomically(tmp_path):
+def test_duplicate_ids_are_rejected_atomically(tmp_path: Path):
     store = SQLiteEvidenceStore(tmp_path / "evidence.sqlite")
     item = make_evidence()
     store.append(item)
