@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -11,6 +13,8 @@ from typing import Any
 import duckdb
 
 from d2d.core.sql_guard import validate_read_only_sql
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class QueryExecutionError(RuntimeError):
@@ -72,6 +76,7 @@ class DuckDBQueryExecutor:
         handle: dict[str, duckdb.DuckDBPyConnection | None] = {"connection": None}
         handle_lock = threading.Lock()
         cancel_requested = threading.Event()
+        started_at = time.monotonic()
 
         def interrupt_this_query() -> None:
             cancel_requested.set()
@@ -81,9 +86,11 @@ class DuckDBQueryExecutor:
                 try:
                     connection.interrupt()
                 except duckdb.Error:
-                    pass
+                    _LOGGER.debug("DuckDB interrupt raced with connection shutdown")
 
         def run() -> QueryResult:
+            outcome = "error"
+            captured_rows = 0
             with self._slot:
                 connection: duckdb.DuckDBPyConnection | None = None
                 try:
@@ -103,11 +110,16 @@ class DuckDBQueryExecutor:
                     with handle_lock:
                         handle["connection"] = connection
                     if cancel_requested.is_set():
-                        connection.interrupt()
+                        raise QueryTimeoutError("query cancelled before execution")
                     cursor = connection.execute(validated.sql, list(parameters or ()))
                     columns = tuple(item[0] for item in (cursor.description or ()))
+                    encoded_columns = json.dumps(
+                        columns, ensure_ascii=False, separators=(",", ":")
+                    ).encode("utf-8")
+                    output_bytes = len(encoded_columns) + 2
+                    if output_bytes > self._limits.max_bytes:
+                        raise QueryExecutionError("column metadata exceeds max_bytes")
                     rows: list[tuple[Any, ...]] = []
-                    output_bytes = 2
                     truncated = False
                     while len(rows) < self._limits.max_rows:
                         batch = cursor.fetchmany(1)
@@ -125,15 +137,18 @@ class DuckDBQueryExecutor:
                         output_bytes += extra
                     if not truncated and len(rows) == self._limits.max_rows:
                         truncated = bool(cursor.fetchmany(1))
+                    captured_rows = len(rows)
+                    outcome = "success"
                     return QueryResult(
                         columns=columns,
                         rows=tuple(rows),
-                        captured_rows=len(rows),
+                        captured_rows=captured_rows,
                         output_bytes=output_bytes,
                         truncated=truncated,
                     )
                 except duckdb.Error as exc:
                     if cancel_requested.is_set():
+                        outcome = "interrupted"
                         raise QueryTimeoutError("query was interrupted") from exc
                     raise QueryExecutionError(f"DuckDB query failed: {exc}") from exc
                 finally:
@@ -141,6 +156,15 @@ class DuckDBQueryExecutor:
                         handle["connection"] = None
                     if connection is not None:
                         connection.close()
+                    _LOGGER.info(
+                        "duckdb_query_finished",
+                        extra={
+                            "outcome": outcome,
+                            "duration_seconds": round(time.monotonic() - started_at, 6),
+                            "captured_rows": captured_rows,
+                            "database_kind": "memory" if self._database == ":memory:" else "file",
+                        },
+                    )
 
         worker = asyncio.create_task(asyncio.to_thread(run))
         try:
