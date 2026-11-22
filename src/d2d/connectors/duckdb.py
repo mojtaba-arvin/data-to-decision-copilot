@@ -4,56 +4,41 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Self
 
 import duckdb
+
+from d2d.connectors.base import (
+    ColumnInfo,
+    DiscoveryLimits,
+    SchemaSnapshot,
+    TableInfo,
+    TableSchema,
+)
 
 
 class DuckDBConnectorError(RuntimeError):
     """Raised when a DuckDB source cannot be opened or inspected."""
 
 
-@dataclass(frozen=True, slots=True)
-class ColumnInfo:
-    name: str
-    data_type: str
-    nullable: bool
-    ordinal_position: int
-    default: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class TableInfo:
-    catalog: str
-    schema: str
-    name: str
-    table_type: str
-
-
-@dataclass(frozen=True, slots=True)
-class TableSchema:
-    table: TableInfo
-    columns: tuple[ColumnInfo, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class SchemaSnapshot:
-    tables: tuple[TableSchema, ...]
-    fingerprint: str
-
-
 class DuckDBConnector:
-    """Expose catalog metadata without exposing a write-capable query API.
+    """Expose bounded catalog metadata without a general SQL execution API.
 
     Persistent database files are opened with DuckDB's read-only flag. The
     in-memory mode is isolated to this process and is intended for tests and
-    ephemeral imports; this class still exposes metadata operations only.
+    ephemeral workflows. Discovery limits fail closed rather than returning
+    an incomplete schema that could mislead downstream planning.
     """
 
-    def __init__(self, database: str | Path = ":memory:") -> None:
+    def __init__(
+        self,
+        database: str | Path = ":memory:",
+        *,
+        limits: DiscoveryLimits | None = None,
+    ) -> None:
         self._database = str(database)
+        self._limits = limits or DiscoveryLimits()
         self._connection: duckdb.DuckDBPyConnection | None = None
 
     def __enter__(self) -> Self:
@@ -88,8 +73,14 @@ class DuckDBConnector:
                 FROM information_schema.tables
                 WHERE table_schema NOT IN ('information_schema', 'pg_catalog')
                   AND {table_filter}
-                ORDER BY table_catalog, table_schema, table_name"""
+                ORDER BY table_catalog, table_schema, table_name
+                LIMIT ?""",
+            [self._limits.max_tables + 1],
         ).fetchall()
+        if len(rows) > self._limits.max_tables:
+            raise DuckDBConnectorError(
+                f"schema discovery exceeded max_tables={self._limits.max_tables}"
+            )
         return tuple(
             TableInfo(
                 catalog=str(row[0]),
@@ -125,9 +116,15 @@ class DuckDBConnector:
             """SELECT column_name, data_type, is_nullable, ordinal_position, column_default
                FROM information_schema.columns
                WHERE table_schema = ? AND table_name = ?
-               ORDER BY ordinal_position""",
-            [schema, table],
+               ORDER BY ordinal_position
+               LIMIT ?""",
+            [schema, table, self._limits.max_columns_per_table + 1],
         ).fetchall()
+        if len(column_rows) > self._limits.max_columns_per_table:
+            raise DuckDBConnectorError(
+                "schema discovery exceeded "
+                f"max_columns_per_table={self._limits.max_columns_per_table}"
+            )
         columns = tuple(
             ColumnInfo(
                 name=str(column[0]),
