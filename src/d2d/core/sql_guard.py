@@ -24,7 +24,7 @@ class ValidatedQuery:
 _FORBIDDEN_NODE_NAMES = (
     "Insert", "Update", "Delete", "Create", "Drop", "Alter", "Merge", "Command",
     "Transaction", "Commit", "Rollback", "Grant", "Revoke", "Use", "Set", "Copy",
-    "Into", "Lock", "Pragma", "Attach", "Detach", "Execute", "Call",
+    "Into", "Lock", "Pragma", "Attach", "Detach", "Execute", "Call", "ReadCSV",\n    "ReadParquet", "ReadJSON", "ReadJSONL", "ExternalLocation",
 )
 _FORBIDDEN_FUNCTIONS = {
     "LOAD_EXTENSION", "INSTALL", "READ_CSV", "READ_CSV_AUTO", "READ_PARQUET",
@@ -59,7 +59,7 @@ def validate_read_only_sql(sql: str, dialect: str = "") -> ValidatedQuery:
         if forbidden_types and isinstance(node, forbidden_types):
             raise SQLValidationError(f"forbidden SQL operation: {type(node).__name__}")
         if isinstance(node, exp.Func):
-            function_name = node.sql_name().upper()
+            function_name = (node.name if isinstance(node, exp.Anonymous) else node.sql_name()).upper()
             if function_name in _FORBIDDEN_FUNCTIONS:
                 raise SQLValidationError(f"forbidden SQL function: {function_name}")
 
