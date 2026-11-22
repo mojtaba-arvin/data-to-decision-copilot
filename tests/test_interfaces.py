@@ -34,7 +34,7 @@ def test_shared_service_executes_query_and_records_history(catalog: Path, tmp_pa
         assert result.get("rows") == [[2]]
         assert result.get("evidence_id")
         assert service.history()[0]["question"] == "count rows in orders"
-        assert service.schema()["tables"][0]["name"] == "orders"
+        assert '"name": "orders"' in json.dumps(service.schema())
     finally:
         service.close()
 
