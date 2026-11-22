@@ -231,7 +231,10 @@ class FileDataSource:
             raise FileSourceError("source path must be a regular file")
         if resolved.suffix.lower() not in {".csv", ".parquet"}:
             raise FileSourceError("only .csv and .parquet files are supported")
-        if resolved.stat().st_size > self._max_file_bytes:
+        size = resolved.stat().st_size
+        if size == 0:
+            raise FileSourceError("source file must not be empty")
+        if size > self._max_file_bytes:
             raise FileSourceError(f"file exceeds max_file_bytes={self._max_file_bytes}")
         return resolved
 
