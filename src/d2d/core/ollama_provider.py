@@ -10,6 +10,7 @@ import json
 from dataclasses import dataclass
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
+from typing import cast
 from urllib.request import Request, urlopen
 
 from d2d.core.model_planning import StructuredGenerationRequest, StructuredPlanProvider
@@ -77,12 +78,15 @@ class OllamaStructuredPlanProvider(StructuredPlanProvider):
         if len(envelope) > _MAX_ENVELOPE_BYTES:
             raise OllamaProviderError("Ollama response envelope exceeds the byte limit")
         try:
-            decoded = json.loads(envelope)
+            parsed: object = json.loads(envelope)
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise OllamaProviderError("Ollama returned an invalid JSON envelope") from exc
-        if not isinstance(decoded, dict) or not isinstance(decoded.get("response"), str):
+        if not isinstance(parsed, dict):
+            raise OllamaProviderError("Ollama response envelope must be a JSON object")
+        decoded = cast(dict[str, object], parsed)
+        result = decoded.get("response")
+        if not isinstance(result, str):
             raise OllamaProviderError("Ollama response envelope has no string response field")
-        result = decoded["response"]
         if len(result.encode("utf-8")) > request.max_output_bytes:
             raise OllamaProviderError("Ollama generated output exceeds the requested byte limit")
         if decoded.get("done") is not True:

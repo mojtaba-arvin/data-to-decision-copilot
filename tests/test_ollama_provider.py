@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from io import BytesIO
 from urllib.error import URLError
 from urllib.request import Request
@@ -21,6 +22,13 @@ def generation_request(max_output_bytes: int = 4_096) -> StructuredGenerationReq
         response_schema={"type": "object", "properties": {"limit": {"type": "integer"}}},
         max_output_bytes=max_output_bytes,
     )
+
+
+def response_stub(content: bytes) -> Callable[[Request, float], FakeResponse]:
+    def fake_urlopen(request: Request, timeout: float) -> FakeResponse:
+        return FakeResponse(content)
+
+    return fake_urlopen
 
 
 class FakeResponse:
@@ -51,6 +59,7 @@ def test_ollama_sends_json_schema_request_to_loopback(monkeypatch: pytest.Monkey
 
     request = captured["request"]
     assert isinstance(request, Request)
+    assert request.data is not None
     payload = json.loads(request.data)
     assert request.full_url == "http://127.0.0.1:11434/api/generate"
     assert payload["model"] == "qwen3:8b"
@@ -104,7 +113,7 @@ def test_rejects_invalid_envelope_and_incomplete_generation(
     provider = OllamaStructuredPlanProvider(model="qwen3:8b")
     monkeypatch.setattr(
         "d2d.core.ollama_provider.urlopen",
-        lambda request, timeout: FakeResponse(b"not-json"),
+        response_stub(b"not-json"),
     )
     with pytest.raises(OllamaProviderError, match="invalid JSON"):
         provider.generate(generation_request())
@@ -121,7 +130,7 @@ def test_rejects_oversized_response_envelope(monkeypatch: pytest.MonkeyPatch) ->
     provider = OllamaStructuredPlanProvider(model="qwen3:8b")
     monkeypatch.setattr(
         "d2d.core.ollama_provider.urlopen",
-        lambda request, timeout: FakeResponse(b" " * 131_073),
+        response_stub(b" " * 131_073),
     )
     with pytest.raises(OllamaProviderError, match="envelope"):
         provider.generate(generation_request())
@@ -131,9 +140,7 @@ def test_rejects_generated_text_over_request_limit(monkeypatch: pytest.MonkeyPat
     provider = OllamaStructuredPlanProvider(model="qwen3:8b")
     monkeypatch.setattr(
         "d2d.core.ollama_provider.urlopen",
-        lambda request, timeout: FakeResponse(
-            json.dumps({"response": "x" * 5, "done": True}).encode()
-        ),
+        response_stub(json.dumps({"response": "x" * 5, "done": True}).encode()),
     )
     with pytest.raises(OllamaProviderError, match="output"):
         provider.generate(generation_request(max_output_bytes=4))
@@ -142,9 +149,7 @@ def test_rejects_generated_text_over_request_limit(monkeypatch: pytest.MonkeyPat
 def test_accepts_localhost_alias(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "d2d.core.ollama_provider.urlopen",
-        lambda request, timeout: FakeResponse(
-            json.dumps({"response": "{}", "done": True}).encode()
-        ),
+        response_stub(json.dumps({"response": "{}", "done": True}).encode()),
     )
     provider = OllamaStructuredPlanProvider(
         model="qwen3:8b", base_url="http://localhost:11434/"
