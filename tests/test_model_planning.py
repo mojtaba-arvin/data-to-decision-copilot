@@ -36,7 +36,7 @@ class FakeStructuredProvider:
 
 @pytest.fixture
 def snapshot(tmp_path: Path) -> Iterator[SchemaSnapshot]:
-    path = tmp_path / "model-planner.duckdb"
+    path = tmp_path / "model_planner.duckdb"
     connection = duckdb.connect(str(path))
     connection.execute(
         "CREATE TABLE orders (id INTEGER, region VARCHAR, amount DECIMAL(10,2))"
