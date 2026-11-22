@@ -17,3 +17,6 @@ Runtime resource behavior is covered separately by bounded row/byte, timeout,
 cancellation, and SQL-safety tests. Model inference is not run in ordinary CI;
 local Ollama smoke and model-quality evaluation must be recorded separately with
 the model tag, hardware, prompt version, dataset version, and raw outputs.
+
+
+The Phase 14 PR adds a separate bilingual regression suite for equivalent Persian and English requests; keep that suite in the full integration gate.
