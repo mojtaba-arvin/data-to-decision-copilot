@@ -279,3 +279,16 @@ def test_fact_claim_matches_string_and_boolean_literals(value: object, statement
         plan, evidence=(evidence,), policy=DecisionPolicy(policy_id="literal-values", version="1")
     )
     assert report.allowed, report.violations
+
+
+def test_fact_string_grounding_requires_token_boundaries():
+    evidence = make_evidence().model_copy(update={"rows": (("north",),)})
+    base = make_plan(evidence, statement="The region is northwest.")
+    fact = base.claims[0].model_copy(update={"kind": ClaimKind.FACT})
+    report = evaluate_policy(
+        DecisionPlan(decision=base.decision, claims=(fact,)),
+        evidence=(evidence,),
+        policy=DecisionPolicy(policy_id="token-boundary", version="1"),
+    )
+    assert not report.allowed
+    assert any("literal value match" in item for item in report.violations)
