@@ -146,7 +146,7 @@ def test_query_plan_runtime_executes_and_persists_real_evidence(
             assert outcome.evidence_sequence == 1
             saved = store.get(outcome.evidence_id)
             assert saved is not None
-            assert saved.rows == outcome.result.rows
+            assert saved.rows == (("north", "30.00"), ("south", "30.00"))
             assert saved.sql == outcome.query.sql
             assert saved.schema_fingerprint == snapshot.fingerprint
             assert store.verify().valid
