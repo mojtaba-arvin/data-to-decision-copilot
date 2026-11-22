@@ -62,6 +62,37 @@ planner = ModelBackedQueryPlanner(
 ```
 The configured tag is descriptive metadata, not a cryptographic model digest. The adapter only accepts loopback HTTP and does not download models or retry failed requests. Automated CI tests mock HTTP and do not claim real inference.
 
+## Local interfaces
+
+Install the package in editable mode, then use the `d2d` command:
+
+```bash
+uv sync --all-groups
+d2d schema --catalog ./analytics.duckdb
+d2d query --catalog ./analytics.duckdb --question "count rows in orders"
+d2d query --catalog ./analytics.duckdb --provider ollama --model qwen3:8b --question "تعداد ردیف‌ها در orders"
+d2d serve --catalog ./analytics.duckdb --host 127.0.0.1 --port 8765
+d2d mcp --catalog ./analytics.duckdb
+```
+
+The REST API exposes `GET /health`, `GET /v1/schema`, `GET /v1/history`, and
+`POST /v1/query` with a JSON `question` field. The API binds to loopback only
+because authentication and remote access controls are not part of this milestone.
+The MCP stdio server exposes `query_analytics` and `get_schema`; both call the
+same typed QueryPlanningRuntime and cannot execute arbitrary SQL.
+
+Serve `ui/index.html` from the same origin as the REST API (or configure a local
+reverse proxy) to use the lightweight browser interface. It displays query results,
+bounded execution metadata, the evidence identifier, schema fingerprint, planner
+identity, and recent in-process query history. History is process-local and resets
+when the service restarts; durable decision-trace history remains a separate layer.
+
+The CLI, REST, and MCP interfaces share one service implementation. The default
+planner is the deterministic Persian/English grammar; `--provider ollama` opts
+into the local structured-plan provider. All query paths remain read-only and
+use the same schema validation, SQL AST guard, resource-bounded executor, and
+execution-derived Evidence journal.
+
 ## Security boundary
 SQL validation is defense in depth, not a replacement for database-enforced read-only credentials, OS-level isolation, or network policy. The DuckDB memory ceiling is not an OS process sandbox. Never connect this project to production using a privileged account.
 
