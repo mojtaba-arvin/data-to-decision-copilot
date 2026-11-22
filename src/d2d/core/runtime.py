@@ -16,14 +16,13 @@ from d2d.core.contracts import (
     Confidence,
     Decision,
     DecisionClaim,
-    DecisionTrace,
     Evidence,
 )
 from d2d.core.decision_trace import EvidenceStore, create_decision_trace
 from d2d.core.decision_trace_store import SQLiteDecisionTraceStore
 
 _NUMBER = re.compile(
-    r"(?<![\w.])[-+]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\\.\d+)?%?(?![\\w.])"
+    r"(?<![A-Za-z0-9_.])[-+]?(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:[.][0-9]+)?%?(?![A-Za-z0-9_.])"
 )
 
 
