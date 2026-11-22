@@ -292,3 +292,40 @@ def test_fact_string_grounding_requires_token_boundaries():
     )
     assert not report.allowed
     assert any("literal value match" in item for item in report.violations)
+
+
+def test_policy_rejects_direct_conflicting_fact_claims():
+    evidence = make_evidence(100).model_copy(update={"rows": ((100,), (200,)), "row_count": 2})
+    base = make_plan(evidence, statement="Revenue is 100.")
+    first = base.claims[0].model_copy(
+        update={"kind": ClaimKind.FACT, "statement": "Revenue is 100."}
+    )
+    second = first.model_copy(
+        update={"claim_id": "revenue-200", "statement": "Revenue is 200."}
+    )
+    decision = base.decision.model_copy(update={"rationale": "Review revenue."})
+    report = evaluate_policy(
+        DecisionPlan(decision=decision, claims=(first, second)),
+        evidence=(evidence,),
+        policy=DecisionPolicy(policy_id="contradiction", version="1"),
+    )
+    assert not report.allowed
+    assert any("contradictory" in item for item in report.violations)
+
+
+def test_policy_rejects_explicit_negation_conflict():
+    evidence = make_evidence(7)
+    base = make_plan(evidence, statement="Stock is available.")
+    positive = base.claims[0].model_copy(
+        update={"kind": ClaimKind.FACT, "statement": "Stock is available."}
+    )
+    negative = positive.model_copy(
+        update={"claim_id": "stock-unavailable", "statement": "Stock is not available."}
+    )
+    report = evaluate_policy(
+        DecisionPlan(decision=base.decision, claims=(positive, negative)),
+        evidence=(evidence,),
+        policy=DecisionPolicy(policy_id="negation-conflict", version="1"),
+    )
+    assert not report.allowed
+    assert any("contradictory" in item for item in report.violations)
