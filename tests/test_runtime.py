@@ -153,3 +153,15 @@ def test_deterministic_planner_rejects_evidence_not_in_request():
 
     with pytest.raises(ValueError, match="outside its request"):
         planner.plan(PlannerRequest(question="Question", evidence=(make_evidence(8),)))
+
+
+def test_policy_minimum_counts_only_decision_linked_evidence():
+    first = make_evidence(7)
+    unrelated = make_evidence(8)
+    report = evaluate_policy(
+        make_plan(first),
+        evidence=(first, unrelated),
+        policy=DecisionPolicy(policy_id="two-source", version="1", min_evidence=2),
+    )
+    assert not report.allowed
+    assert "insufficient decision-linked evidence records" in report.violations
