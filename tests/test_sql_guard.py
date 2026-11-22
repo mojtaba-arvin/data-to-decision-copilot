@@ -9,6 +9,7 @@ from d2d.core.sql_guard import SQLValidationError, validate_read_only_sql
         "SELECT id, total FROM orders",
         "WITH monthly AS (SELECT date_trunc('month', created_at) AS month FROM orders) SELECT month FROM monthly",
         "SELECT id FROM a UNION SELECT id FROM b",
+        "SELECT id FROM orders WHERE region IN (?, ?) AND amount >= ?",
     ],
 )
 def test_accepts_read_only_queries(sql: str) -> None:
