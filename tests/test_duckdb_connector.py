@@ -3,6 +3,7 @@ from pathlib import Path
 import duckdb
 import pytest
 
+from d2d.connectors.base import DataSource, DiscoveryLimits
 from d2d.connectors.duckdb import DuckDBConnector, DuckDBConnectorError
 
 
@@ -72,8 +73,6 @@ def test_metadata_queries_do_not_accept_identifier_injection(database_path: Path
         source.describe_table("main' OR 1=1 --", "orders")
 
 
-from d2d.connectors.base import DataSource, DiscoveryLimits
-
 
 def test_discovery_limits_validate_positive_values() -> None:
     with pytest.raises(ValueError, match="max_tables"):
@@ -111,8 +110,12 @@ def test_snapshot_obeys_relation_limit(database_path: Path) -> None:
 
 
 def test_duckdb_connector_satisfies_data_source_protocol(database_path: Path) -> None:
-    source: DataSource = DuckDBConnector(database_path)
-    with source:
+    connector = DuckDBConnector(database_path)
+    connector.open()
+    source: DataSource = connector
+    try:
         assert source.list_tables()
         assert source.describe_table("main", "orders").columns
         assert source.snapshot().fingerprint
+    finally:
+        connector.close()
