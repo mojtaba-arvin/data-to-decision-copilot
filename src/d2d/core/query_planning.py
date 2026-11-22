@@ -339,6 +339,13 @@ class QueryPlanningRuntime:
         identity = planner.identity
         plan = planner.plan(question, snapshot)
         query = compile_query_plan(plan, snapshot=snapshot, source_id=self._source_id)
+        # Detect DDL/schema changes that occur while a planner is running. The
+        # executor still receives only the compiled, fingerprint-bound query.
+        current_snapshot = self._data_source.snapshot()
+        if current_snapshot.fingerprint != snapshot.fingerprint:
+            raise QueryPlanningError(
+                "schema changed during planning; discard this plan and retry against a fresh snapshot"
+            )
         started = time.perf_counter()
         result = await self._executor.execute(
             query.sql, query.parameters, dialect=query.dialect
