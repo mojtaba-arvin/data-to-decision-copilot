@@ -98,6 +98,11 @@ class CopilotService:
         with self._history_lock:
             return [dict(item) for item in self._history]
 
+    def close(self) -> None:
+        """Close the owned DuckDB catalog connection."""
+        if isinstance(self._source, DuckDBConnector):
+            self._source.close()
+
 
 def build_service(
     *,
