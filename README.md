@@ -81,6 +81,12 @@ because authentication and remote access controls are not part of this milestone
 The MCP stdio server exposes `query_analytics` and `get_schema`; both call the
 same typed QueryPlanningRuntime and cannot execute arbitrary SQL.
 
+The current REST, CLI, and MCP product flow exposes query results and execution
+Evidence. DecisionRuntime and DecisionTrace persistence are available as core
+APIs, but automatic recommendation generation and DecisionTrace browsing are not
+yet exposed through these interfaces; no recommendation is fabricated from a
+query result.
+
 Serve `ui/index.html` from the same origin as the REST API (or configure a local
 reverse proxy) to use the lightweight browser interface. It displays query results,
 bounded execution metadata, the evidence identifier, schema fingerprint, planner
