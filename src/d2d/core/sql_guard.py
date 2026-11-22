@@ -24,7 +24,8 @@ class ValidatedQuery:
 _FORBIDDEN_NODE_NAMES = (
     "Insert", "Update", "Delete", "Create", "Drop", "Alter", "Merge", "Command",
     "Transaction", "Commit", "Rollback", "Grant", "Revoke", "Use", "Set", "Copy",
-    "Into", "Lock", "Pragma", "Attach", "Detach", "Execute", "Call", "ReadCSV",\n    "ReadParquet", "ReadJSON", "ReadJSONL", "ExternalLocation",
+    "Into", "Lock", "Pragma", "Attach", "Detach", "Execute", "Call", "ReadCSV",
+    "ReadParquet", "ReadJSON", "ReadJSONL", "ExternalLocation",
 )
 _FORBIDDEN_FUNCTIONS = {
     "LOAD_EXTENSION", "INSTALL", "READ_CSV", "READ_CSV_AUTO", "READ_PARQUET",
