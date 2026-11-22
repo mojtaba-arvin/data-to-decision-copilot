@@ -17,6 +17,12 @@ class EvidenceStatus(StrEnum):
     NOT_EXECUTED = "not_executed"
 
 
+class ClaimKind(StrEnum):
+    FACT = "fact"
+    INFERENCE = "inference"
+    RECOMMENDATION = "recommendation"
+
+
 class Evidence(BaseModel):
     """Immutable server-created record of an execution and its captured output."""
 
@@ -85,6 +91,11 @@ class Decision(BaseModel):
     def validate_unique_evidence_ids(self) -> "Decision":
         if len(self.evidence_ids) != len(set(self.evidence_ids)):
             raise ValueError("decision evidence IDs must be unique")
+        actions = [self.action.strip().casefold()] + [
+            item.action.strip().casefold() for item in self.alternatives
+        ]
+        if len(actions) != len(set(actions)):
+            raise ValueError("decision alternatives must not duplicate the selected action")
         return self
 
 
@@ -119,6 +130,7 @@ class DecisionClaim(BaseModel):
     claim_id: str = Field(min_length=1)
     statement: str = Field(min_length=1)
     evidence_ids: tuple[str, ...] = Field(min_length=1)
+    kind: ClaimKind = ClaimKind.INFERENCE
 
     @model_validator(mode="after")
     def validate_unique_evidence_ids(self) -> "DecisionClaim":
