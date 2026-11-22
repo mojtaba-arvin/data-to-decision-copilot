@@ -32,7 +32,7 @@ The journal is a local persistence adapter, not a distributed production ledger.
 ## Development
 Requires Python 3.13+ and uv.
 ```bash
-uv sync --all-groups
+uv sync --locked --all-groups
 uv run pytest
 uv run ruff check .
 uv run pyright
@@ -67,7 +67,7 @@ The configured tag is descriptive metadata, not a cryptographic model digest. Th
 Install the package in editable mode, then use the `d2d` command:
 
 ```bash
-uv sync --all-groups
+uv sync --locked --all-groups
 d2d schema --catalog ./analytics.duckdb
 d2d query --catalog ./analytics.duckdb --question "count rows in orders"
 d2d query --catalog ./analytics.duckdb --provider ollama --model qwen3:8b --question "تعداد ردیف‌ها در orders"
