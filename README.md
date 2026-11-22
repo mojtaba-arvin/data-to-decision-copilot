@@ -21,10 +21,11 @@ The first implementation milestone is deliberately small:
 - Read-only DuckDB catalog discovery for persistent database files.
 - A structural DataSource protocol shared by metadata adapters.
 - Bounded relation and column discovery; limit violations fail closed.
+- Explicit CSV/Parquet metadata sources with root confinement, symlink rejection, file-size ceilings, and bounded CSV inference.
 - Table/view and column metadata plus deterministic schema fingerprints.
 - Deterministic unit tests that do not call an LLM or access a network.
 
-CSV/Parquet sources, analytical SQL execution, evidence generation, planner, verifier, API, MCP server, UI, and benchmark suites remain future milestones.
+Analytical SQL execution, execution-derived evidence generation, planner, verifier, API, MCP server, UI, and benchmark suites remain future milestones.
 
 ## Development
 
