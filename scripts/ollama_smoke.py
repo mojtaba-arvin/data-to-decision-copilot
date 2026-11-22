@@ -18,6 +18,7 @@ from d2d.core.sql_executor import DuckDBQueryExecutor
 
 
 def main() -> None:
+    # This script is invoked by the provider PR's isolated real-inference CI job.
     model = os.environ.get("D2D_OLLAMA_MODEL", "qwen3:8b")
     with tempfile.TemporaryDirectory(prefix="d2d-ollama-smoke-") as directory:
         root = Path(directory)
