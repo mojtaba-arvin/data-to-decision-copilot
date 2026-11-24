@@ -98,7 +98,7 @@ async function refresh() {
 }
 let lastQuery = null;
 $('query-form').addEventListener('submit', async (event) => {
-  event.preventDefault(); $('submit').disabled = true; $('message').textContent = 'Executing…';
+  event.preventDefault(); lastQuery = null; $('decision-section').hidden = true; $('submit').disabled = true; $('message').textContent = 'Executing…';
   try {
     const response = await fetch('/v1/query', {
       method: 'POST', headers: {'Content-Type':'application/json'},
