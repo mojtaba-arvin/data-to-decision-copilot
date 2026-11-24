@@ -6,7 +6,6 @@ import argparse
 import asyncio
 import json
 import platform
-import resource
 import statistics
 import sys
 import tempfile
@@ -26,25 +25,6 @@ def percentile(values: list[float], fraction: float) -> float:
     ordered = sorted(values)
     index = min(len(ordered) - 1, max(0, round((len(ordered) - 1) * fraction)))
     return ordered[index]
-
-
-def peak_rss_bytes() -> int | None:
-    """Return process high-water RSS in bytes where the OS exposes it."""
-    try:
-        peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    except (AttributeError, OSError):
-        return None
-    # macOS reports bytes; Linux and the BSDs report KiB.
-    return int(peak if platform.system() == "Darwin" else peak * 1024)
-
-
-def sqlite_journal_metrics(path: Path) -> dict[str, int]:
-    """Report the on-disk evidence journal footprint and committed record count."""
-    import sqlite3
-
-    with sqlite3.connect(path) as connection:
-        records = int(connection.execute("SELECT COUNT(*) FROM evidence_journal").fetchone()[0])
-    return {"records": records, "bytes": path.stat().st_size}
 
 
 def main() -> int:
@@ -113,8 +93,6 @@ def main() -> int:
             "platform": platform.platform(),
             "python": sys.version.split()[0],
             "process_cpu_seconds": round(time.process_time() - cpu_started, 3),
-            "peak_rss_bytes": peak_rss_bytes(),
-            "evidence_journal": sqlite_journal_metrics(root / "evidence.sqlite"),
             "duckdb_memory_limit": "256MB",
             "duckdb_threads": 1,
             "schema_discovery": {
@@ -129,7 +107,6 @@ def main() -> int:
                 "median": round(statistics.median(end_to_end), 3),
                 "p95": round(percentile(end_to_end, 0.95), 3),
             },
-            "resource_note": "Peak RSS includes setup and warm-up. SQLite bytes cover the main database file, not WAL sidecars.",
             "note": "Local regression measurements; not a cross-machine performance claim.",
         }
         print(json.dumps(report, indent=2))

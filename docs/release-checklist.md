@@ -58,3 +58,16 @@ main-database file size after the measured query loop. It does not imply a
 retention or compaction policy: both journals remain append-only, and safe
 compaction still requires a verifiable checkpoint and backup design. WAL
 sidecars are not included in this size.
+
+
+## Remote REST authentication boundary
+
+Remote REST binds require all three of: a bearer token supplied through the
+D2D_REST_BEARER_TOKEN environment variable (minimum 32 characters), a PEM
+TLS certificate, and its private key. The CLI accepts --tls-certfile and
+--tls-keyfile; it never accepts the secret as a command-line argument. TLS
+is enforced by the server with TLS 1.2 or newer, and all HTTP routes require the
+same bearer credential. Keep the service behind a network firewall and rotate
+credentials through the deployment secret manager. This is single-credential
+service authentication, not per-user identity, role-based authorization, or
+tenant isolation; do not expose it as a multi-tenant service.
