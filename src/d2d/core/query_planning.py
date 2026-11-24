@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from d2d.connectors.base import DataSource, SchemaSnapshot, TableSchema
 from d2d.core.evidence import create_execution_evidence
 from d2d.core.evidence_store import SQLiteEvidenceStore
-from d2d.core.sql_executor import DuckDBQueryExecutor, QueryResult
+from d2d.core.sql_executor import QueryResult
 from d2d.core.sql_guard import validate_read_only_sql
 
 _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
