@@ -105,16 +105,60 @@ def test_mcp_stdio_exposes_only_query_and_schema_tools(catalog: Path, tmp_path: 
         service.close()
 
 
-def test_rest_server_refuses_non_loopback_bind(catalog: Path, tmp_path: Path) -> None:
+def test_rest_server_requires_auth_for_non_loopback_bind(catalog: Path, tmp_path: Path) -> None:
     service = build_service(
         catalog_path=str(catalog), evidence_path=str(tmp_path / "bind-evidence.sqlite")
     )
     try:
-        with pytest.raises(ValueError, match="loopback"):
+        with pytest.raises(ValueError, match="bearer token.*TLS"):
             create_server(service, host="0.0.0.0")
         with pytest.raises(ValueError, match="max_concurrent_queries"):
             create_server(service, max_concurrent_queries=0)
         with pytest.raises(ValueError, match="max_concurrent_queries"):
             create_server(service, max_concurrent_queries=33)
     finally:
+        service.close()
+
+
+def test_remote_rest_requires_bearer_token_and_tls(catalog: Path, tmp_path: Path) -> None:
+    service = build_service(
+        catalog_path=str(catalog), evidence_path=str(tmp_path / "remote-evidence.sqlite")
+    )
+    try:
+        with pytest.raises(ValueError, match="bearer token.*TLS"):
+            create_server(service, host="0.0.0.0")
+        with pytest.raises(ValueError, match="at least 32"):
+            create_server(service, host="0.0.0.0", bearer_token="short",
+                          tls_certfile="cert.pem", tls_keyfile="key.pem")
+        with pytest.raises(ValueError, match="configured together"):
+            create_server(service, host="127.0.0.1", tls_certfile="cert.pem")
+    finally:
+        service.close()
+
+
+def test_local_rest_bearer_auth_rejects_missing_and_wrong_token(
+    catalog: Path, tmp_path: Path
+) -> None:
+    from urllib.error import HTTPError
+
+    service = build_service(
+        catalog_path=str(catalog), evidence_path=str(tmp_path / "auth-evidence.sqlite")
+    )
+    server = create_server(service, port=0, bearer_token="t" * 32)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://{server.server_address[0]}:{server.server_address[1]}"
+    try:
+        for headers in ({}, {"Authorization": "Bearer " + "w" * 32}):
+            request = Request(base + "/health", headers=headers)
+            with pytest.raises(HTTPError) as error:
+                urlopen(request, timeout=5)
+            assert error.value.code == 401
+        request = Request(base + "/health", headers={"Authorization": "Bearer " + "t" * 32})
+        with urlopen(request, timeout=5) as response:
+            assert json.loads(response.read())["status"] == "ok"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
         service.close()

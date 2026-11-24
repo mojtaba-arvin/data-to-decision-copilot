@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 from collections.abc import Sequence
 
 from d2d.api import create_server
@@ -26,6 +27,12 @@ def _parser() -> argparse.ArgumentParser:
         if name == "serve":
             command.add_argument("--host", default="127.0.0.1")
             command.add_argument("--port", type=int, default=8765)
+            command.add_argument(
+                "--bearer-token-env", default="D2D_REST_BEARER_TOKEN",
+                help="Environment variable containing a 32+ character bearer token for authenticated access",
+            )
+            command.add_argument("--tls-certfile", help="PEM server certificate (required for remote binds)")
+            command.add_argument("--tls-keyfile", help="PEM private key (required for remote binds)")
     return parser
 
 
@@ -50,9 +57,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             run_stdio(service)
             return 0
         if args.command == "serve":
-            server = create_server(service, host=args.host, port=args.port)
+            server = create_server(
+                service, host=args.host, port=args.port,
+                bearer_token=os.environ.get(args.bearer_token_env),
+                tls_certfile=args.tls_certfile, tls_keyfile=args.tls_keyfile,
+            )
             try:
-                print(f"REST API listening on http://{args.host}:{args.port}")
+                scheme = "https" if args.tls_certfile else "http"
+                print(f"REST API listening on {scheme}://{args.host}:{args.port}")
                 server.serve_forever()
             except KeyboardInterrupt:
                 pass
