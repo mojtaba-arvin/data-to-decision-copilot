@@ -129,3 +129,20 @@ The default policy is no automatic deletion. Disk pressure triggers an alert and
 5. Enable retention only after restore drills and external archive-copy verification are automated.
 
 No row deletion, compaction, or automatic retention may ship before all rollout gates pass.
+
+
+## Implementation increment: segment-chain verification contract
+
+The first implementation increment adds a version-2 segment-manifest verifier in
+`d2d.core.journal_chain`. It validates canonical manifest bytes and digests,
+database byte size and digest, journal type and schema, unique segment IDs,
+contiguous sequence ranges, first-record predecessor hashes, previous-manifest
+links, and actual SQLite boundary hashes. Segments are supplied oldest first;
+gaps, overlaps, and reordered segments fail closed.
+
+Record-level validation is deliberately injected through a checkpoint-aware
+callback receiving the database path, first sequence, and predecessor hash.
+Existing genesis-only store verifiers do not satisfy this contract. Until both
+journal stores implement that callback and checkpoint-aware append semantics,
+this module is an archive-envelope verifier only: it does not authorize rotation,
+checkpoint advancement, restore publication, or retention deletion.
