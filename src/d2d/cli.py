@@ -48,6 +48,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         history_path=args.history_db,
         provider=args.provider,
         model=args.model,
+        isolated_worker=args.isolated_worker,
     )
     try:
         if args.command == "query":
