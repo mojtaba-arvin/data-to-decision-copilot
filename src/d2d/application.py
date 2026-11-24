@@ -89,6 +89,11 @@ class CopilotService:
 
         if not question.strip() or not evidence_id.strip():
             raise ValueError("question and evidence_id must not be empty")
+        if not any(
+            item.evidence_id == evidence_id and item.question == question
+            for item in self._history_store.list(limit=1_000)
+        ):
+            raise ValueError("evidence_id is not associated with this exact query in local history")
         try:
             proposal = Decision.model_validate(decision)
             claim_items = tuple(DecisionClaim.model_validate(item) for item in claims)
