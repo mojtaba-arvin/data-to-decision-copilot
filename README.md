@@ -75,17 +75,25 @@ d2d serve --catalog ./analytics.duckdb --host 127.0.0.1 --port 8765
 d2d mcp --catalog ./analytics.duckdb
 ```
 
-The REST API exposes `GET /health`, `GET /v1/schema`, `GET /v1/history`, and
-`POST /v1/query` with a JSON `question` field. The API binds to loopback only
-because authentication and remote access controls are not part of this milestone.
-The MCP stdio server exposes `query_analytics` and `get_schema`; both call the
-same typed QueryPlanningRuntime and cannot execute arbitrary SQL.
+The REST API exposes `GET /health`, `GET /v1/schema`, `GET /v1/history`,
+`GET /v1/traces`, `GET /v1/traces/{trace_id}`, and `POST /v1/query`.
+`POST /v1/decision` accepts a caller-authored proposal tied to the evidence ID
+returned by a prior query. The proposal must include a decision, at least one
+claim, an alternative with its trade-off, and a reversal condition. The server
+re-verifies the evidence journal and current schema, rejects truncated evidence,
+checks numeric grounding for claims marked as facts, applies a conservative
+policy (low/medium confidence only), and persists a DecisionTrace only when all
+gates pass. The endpoint does not generate recommendations from query rows or
+claim general natural-language entailment; proposal authors remain responsible
+for semantic correctness. This is an explicit human-in-the-loop decision path,
+not an autonomous decision agent.
 
-The current REST, CLI, and MCP product flow exposes query results and execution
-Evidence. DecisionRuntime and DecisionTrace persistence are available as core
-APIs, but automatic recommendation generation and DecisionTrace browsing are not
-yet exposed through these interfaces; no recommendation is fabricated from a
-query result.
+The REST API binds to loopback by default. Remote binds require TLS and a
+32-character bearer token; this is shared-token authentication, not per-user
+RBAC or tenant isolation. The MCP stdio server exposes `query_analytics` and
+`get_schema`; both call the same typed QueryPlanningRuntime and cannot execute
+arbitrary SQL. Decision submission remains REST/UI-only until a separately
+reviewed MCP proposal contract is added.
 
 Serve `ui/index.html` from the same origin as the REST API (or configure a local
 reverse proxy) to use the lightweight browser interface. It displays query results,
