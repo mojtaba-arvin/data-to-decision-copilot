@@ -9,11 +9,6 @@ from typing import Any
 from d2d.core.journal_chain import GENESIS, verify_archive_chain
 
 
-def _canonical_for_test(value: Any) -> bytes:
-    return json.dumps(
-        value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
-    ).encode("utf-8")
-
 
 class Report:
     def __init__(self, valid: bool, records_checked: int) -> None:
