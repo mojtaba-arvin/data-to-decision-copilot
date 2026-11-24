@@ -207,6 +207,7 @@ def build_service(
     trace_path: str = "d2d-traces.sqlite",
     provider: str = "rules",
     model: str = "qwen3:8b",
+    isolated_worker: bool = False,
 ) -> CopilotService:
     """Build the same read-only query pipeline for every product interface."""
     source = DuckDBConnector(catalog_path)
