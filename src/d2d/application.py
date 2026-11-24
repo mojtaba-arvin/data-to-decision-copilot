@@ -227,7 +227,11 @@ def build_service(
     evidence_store = SQLiteEvidenceStore(evidence_path)
     return CopilotService(
         source=source,
-        executor=DuckDBQueryExecutor(catalog_path),
+        executor=(
+            IsolatedDuckDBQueryExecutor(catalog_path)
+            if isolated_worker
+            else DuckDBQueryExecutor(catalog_path)
+        ),
         evidence_store=evidence_store,
         planner=planner,
         source_id="analytics-catalog",
