@@ -5,6 +5,7 @@ import json
 import threading
 from io import StringIO
 from pathlib import Path
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 import duckdb
@@ -45,7 +46,8 @@ def test_shared_service_executes_query_and_records_history(catalog: Path, tmp_pa
 
 def test_rest_api_serves_query_history_and_schema(catalog: Path, tmp_path: Path) -> None:
     service = build_service(
-        catalog_path=str(catalog), evidence_path=str(tmp_path / "api-evidence.sqlite")
+        catalog_path=str(catalog), evidence_path=str(tmp_path / "api-evidence.sqlite"),
+        trace_path=str(tmp_path / "api-traces.sqlite"),
     )
     server = create_server(service, port=0)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
