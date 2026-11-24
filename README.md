@@ -2,7 +2,7 @@
 
 An open-source, read-only analytics copilot that turns natural-language questions into evidence-backed answers and explicit decision recommendations.
 
-> Status: functional local alpha. Query planning/execution, evidence journaling, explicit human-authored decision submission, DecisionTrace persistence/browsing, CLI, REST, MCP query tools, and browser UI are implemented. Remote access is TLS + shared bearer-token protected but has no per-user RBAC or tenant isolation. Untrusted workloads are not process-isolated. Do not treat this as a multi-tenant or autonomous decision system.
+> Status: functional local alpha. Query planning/execution, evidence journaling, explicit human-authored decision submission, DecisionTrace persistence/browsing, CLI, REST, MCP query tools, and browser UI are implemented. An opt-in POSIX worker can execute DuckDB queries in a separately supervised, resource-limited process. This is process-level isolation, not a complete OS sandbox. Remote access is TLS + shared bearer-token protected but has no per-user RBAC or tenant isolation. Do not treat this as a multi-tenant or autonomous decision system.
 
 ## Design principles
 - **Evidence before explanation:** every reported metric must trace to an executed query or a recorded deterministic calculation.
@@ -70,6 +70,7 @@ Install the package in editable mode, then use the `d2d` command:
 uv sync --locked --all-groups
 d2d schema --catalog ./analytics.duckdb
 d2d query --catalog ./analytics.duckdb --question "count rows in orders"
+d2d query --catalog ./analytics.duckdb --isolated-worker --question "count rows in orders"
 d2d query --catalog ./analytics.duckdb --provider ollama --model qwen3:8b --question "تعداد ردیف‌ها در orders"
 d2d serve --catalog ./analytics.duckdb --host 127.0.0.1 --port 8765
 d2d mcp --catalog ./analytics.duckdb
@@ -113,7 +114,7 @@ use the same schema validation, SQL AST guard, resource-bounded executor, and
 execution-derived Evidence journal.
 
 ## Security boundary
-SQL validation is defense in depth, not a replacement for database-enforced read-only credentials, OS-level isolation, or network policy. The DuckDB memory ceiling is not an OS process sandbox. Never connect this project to production using a privileged account.
+SQL validation is defense in depth, not a replacement for database-enforced read-only credentials, OS-level isolation, or network policy. The optional supervised worker adds process separation and resource ceilings, but is not a complete sandbox: it does not independently deny network egress or confine filesystem access. Use a deployment-level container/OS policy to mount only required catalog files read-only and deny network egress and unrelated filesystem access. Never connect this project to production using a privileged account.
 
 Journal limitations and operating guidance are documented in [Spec 0007](docs/specs/0007-evidence-journal.md) and [ADR 0007](docs/adr/0007-evidence-journal.md). 
 Journal archive/rotation design (proposed; not implemented) is documented in [Spec 0015](docs/specs/0015-journal-archive-rotation.md) and [ADR 0015](docs/adr/0015-journal-archive-rotation.md).
