@@ -75,6 +75,62 @@ def test_rest_api_serves_query_history_and_schema(catalog: Path, tmp_path: Path)
         with urlopen(base + "/v1/traces", timeout=5) as response:
             traces = json.loads(response.read())
         assert traces["items"] == []
+
+        decision_body = {
+            "question": "count rows in orders",
+            "evidence_id": payload["evidence_id"],
+            "decision": {
+                "action": "Review order volume before changing inventory.",
+                "rationale": "The executed query returned two order rows; this alone does not establish a trend.",
+                "evidence_ids": [payload["evidence_id"]],
+                "confidence": "medium",
+                "alternatives": [{
+                    "action": "Keep the current inventory plan.",
+                    "trade_off": "Avoids a premature change but may delay a response to demand.",
+                }],
+                "reversal_conditions": ["Reassess after a comparable time-window query."],
+                "caveats": ["Only a row count was queried; no revenue or trend was measured."],
+            },
+            "claims": [{
+                "claim_id": "observed-row-count",
+                "statement": "The query returned 2 rows.",
+                "evidence_ids": [payload["evidence_id"]],
+                "kind": "fact",
+            }],
+        }
+        decision_request = Request(
+            base + "/v1/decision", data=json.dumps(decision_body).encode(),
+            headers={"Content-Type": "application/json"}, method="POST",
+        )
+        with urlopen(decision_request, timeout=5) as response:
+            decision_result = json.loads(response.read())
+            assert response.status == 201
+        assert decision_result["proposal_origin"] == "caller_supplied"
+        assert decision_result["policy"]["allowed"] is True
+        assert decision_result["trace"]["evidence"][0]["evidence_id"] == payload["evidence_id"]
+        with urlopen(base + "/v1/traces", timeout=5) as response:
+            traces = json.loads(response.read())
+        assert len(traces["items"]) == 1
+        assert traces["items"][0]["trace_id"] == decision_result["trace"]["trace_id"]
+
+        rejected_body = json.loads(json.dumps(decision_body))
+        rejected_body["decision"]["confidence"] = "high"
+        rejected_request = Request(
+            base + "/v1/decision", data=json.dumps(rejected_body).encode(),
+            headers={"Content-Type": "application/json"}, method="POST",
+        )
+        with pytest.raises(HTTPError) as rejected:
+            urlopen(rejected_request, timeout=5)
+        assert rejected.value.code == 422
+        mismatched_body = json.loads(json.dumps(decision_body))
+        mismatched_body["question"] = "count rows in invoices"
+        mismatched_request = Request(
+            base + "/v1/decision", data=json.dumps(mismatched_body).encode(),
+            headers={"Content-Type": "application/json"}, method="POST",
+        )
+        with pytest.raises(HTTPError) as mismatched:
+            urlopen(mismatched_request, timeout=5)
+        assert mismatched.value.code == 422
         with pytest.raises(HTTPError) as missing_trace:
             urlopen(base + "/v1/traces/not-a-real-trace", timeout=5)
         assert missing_trace.value.code == 404

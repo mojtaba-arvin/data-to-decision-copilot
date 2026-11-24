@@ -97,7 +97,7 @@ def create_server(
         def do_POST(self) -> None:
             if not self._authorized():
                 return
-            if self.path != "/v1/query":
+            if self.path not in ("/v1/query", "/v1/decision"):
                 self._send(404, {"error": "not_found"})
                 return
             if self.headers.get_content_type() != "application/json":
@@ -117,7 +117,7 @@ def create_server(
                 self._send(400, {"error": "invalid_json"})
                 return
             if not isinstance(decoded, dict):
-                self._send(400, {"error": "question_must_be_a_string"})
+                self._send(400, {"error": "request_body_must_be_an_object"})
                 return
             payload = cast(dict[str, object], decoded)
             question_value = payload.get("question")
@@ -133,11 +133,30 @@ def create_server(
                 return
             try:
                 try:
-                    self._send(200, asyncio.run(service.query(question)))
+                    if self.path == "/v1/query":
+                        self._send(200, asyncio.run(service.query(question)))
+                    else:
+                        evidence_id = payload.get("evidence_id")
+                        decision = payload.get("decision")
+                        claims = payload.get("claims")
+                        if (
+                            not isinstance(evidence_id, str)
+                            or not isinstance(decision, dict)
+                            or not isinstance(claims, list)
+                            or not all(isinstance(item, dict) for item in cast(list[object], claims))
+                        ):
+                            self._send(400, {"error": "invalid_decision_proposal_shape"})
+                            return
+                        self._send(201, service.decide(
+                            question=question,
+                            evidence_id=evidence_id,
+                            decision=cast(dict[str, object], decision),
+                            claims=cast(list[dict[str, object]], claims),
+                        ))
                 except ValueError:
-                    self._send(422, {"error": "query_rejected"})
+                    self._send(422, {"error": "request_rejected_by_validation_or_policy"})
                 except Exception:
-                    self._send(500, {"error": "query_failed"})
+                    self._send(500, {"error": "request_failed"})
             finally:
                 query_slots.release()
 
