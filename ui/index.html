@@ -36,6 +36,7 @@
   <section><h2>Result</h2><div id="result" class="muted">No query yet.</div></section>
   <section><h2>Evidence & execution metadata</h2><pre id="trace" class="muted">Evidence metadata will appear here.</pre></section>
   <section><h2>Recent questions</h2><ol id="history"><li class="muted">No history yet.</li></ol></section>
+  <section><h2>DecisionTrace history</h2><ol id="decision-traces"><li class="muted">No persisted decision traces.</li></ol><pre id="decision-trace-detail" class="muted">DecisionTrace details will appear here when a decision has been produced and persisted.</pre></section>
 </main>
 <script>
 const $ = (id) => document.getElementById(id);
@@ -52,6 +53,34 @@ async function refresh() {
       li.append(button, document.createTextNode(' · ' + item.evidence_id)); $('history').append(li);
     }
   } catch { /* History is optional until the API is connected. */ }
+  try {
+    const response = await fetch('/v1/traces');
+    if (!response.ok) throw new Error('Trace journal unavailable');
+    const data = await response.json();
+    $('decision-traces').replaceChildren();
+    if (!(data.items || []).length) {
+      const item = document.createElement('li');
+      item.className = 'muted';
+      item.textContent = 'No persisted DecisionTrace records. Query execution alone does not generate a decision.';
+      $('decision-traces').append(item);
+    }
+    for (const trace of data.items || []) {
+      const li = document.createElement('li');
+      const button = document.createElement('button');
+      button.textContent = trace.action + ' · ' + trace.confidence + ' · ' + trace.trace_id;
+      button.addEventListener('click', async () => {
+        const detail = await fetch('/v1/traces/' + encodeURIComponent(trace.trace_id));
+        const payload = await detail.json();
+        $('decision-trace-detail').textContent = detail.ok
+          ? JSON.stringify(payload, null, 2)
+          : 'Trace verification failed: ' + (payload.error || detail.status);
+      });
+      li.append(button);
+      $('decision-traces').append(li);
+    }
+  } catch {
+    $('decision-traces').textContent = 'DecisionTrace journal unavailable or failed integrity verification.';
+  }
 }
 $('query-form').addEventListener('submit', async (event) => {
   event.preventDefault(); $('submit').disabled = true; $('message').textContent = 'Executing…';

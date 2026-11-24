@@ -151,6 +151,22 @@ class SQLiteDecisionTraceStore:
             ).fetchone()
         return int(row["total"])
 
+    def list(
+        self, *, limit: int = 100, evidence_store: EvidenceStore | None = None,
+    ) -> list[DecisionTrace]:
+        """List newest traces only after verifying the complete journal chain."""
+        if not 1 <= limit <= 1_000:
+            raise ValueError("trace list limit must be between 1 and 1000")
+        report = self.verify(evidence_store=evidence_store)
+        if not report.valid:
+            raise ValueError(f"decision trace journal verification failed: {report.error}")
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                "SELECT payload FROM decision_trace_journal ORDER BY sequence DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [DecisionTrace.model_validate_json(row["payload"]) for row in rows]
+
     def backup(self, destination: str | Path) -> JournalBackupReport:
         """Create a verified, atomic snapshot without modifying the live trace journal."""
         report = self.verify()

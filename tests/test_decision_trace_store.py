@@ -198,3 +198,16 @@ def test_verified_backup_preserves_trace_chain(tmp_path: Path) -> None:
     assert report.records == 1
     assert SQLiteDecisionTraceStore(destination).verify().valid
     assert store.count() == 1
+
+
+
+def test_list_verifies_journal_before_returning_trace_summaries(tmp_path: Path) -> None:
+    evidence_store = SQLiteEvidenceStore(tmp_path / "list-evidence.sqlite")
+    trace = make_trace(evidence_store)
+    store = SQLiteDecisionTraceStore(tmp_path / "list-traces.sqlite")
+    store.append(trace)
+    listed = store.list(evidence_store=evidence_store)
+    assert [item.trace_id for item in listed] == [trace.trace_id]
+    assert store.list(limit=10, evidence_store=evidence_store)[0].evidence[0].evidence_id == trace.evidence[0].evidence_id
+    with pytest.raises(ValueError, match="limit"):
+        store.list(limit=0, evidence_store=evidence_store)

@@ -6,6 +6,7 @@ from typing import cast
 
 from d2d.connectors.base import DataSource
 from d2d.connectors.duckdb import DuckDBConnector
+from d2d.core.decision_trace_store import SQLiteDecisionTraceStore
 from d2d.core.evidence_store import SQLiteEvidenceStore
 from d2d.core.model_planning import ModelBackedQueryPlanner, ModelProviderIdentity
 from d2d.core.ollama_provider import OllamaStructuredPlanProvider
@@ -27,9 +28,12 @@ class CopilotService:
         planner: QueryPlanner,
         source_id: str,
         history_store: SQLiteQueryHistoryStore,
+        trace_store: SQLiteDecisionTraceStore,
     ) -> None:
         self._source = source
         self._history_store = history_store
+        self._evidence_store = evidence_store
+        self._trace_store = trace_store
         self._planner = planner
         self._runtime = QueryPlanningRuntime(
             source_id=source_id,
@@ -93,6 +97,33 @@ class CopilotService:
     def history(self, *, limit: int = 100) -> list[dict[str, object]]:
         return [item.as_dict() for item in self._history_store.list(limit=limit)]
 
+    def traces(self, *, limit: int = 100) -> list[dict[str, object]]:
+        """Return verified trace summaries; an empty list means no decisions were traced."""
+        return [
+            {
+                "trace_id": trace.trace_id,
+                "question": trace.question,
+                "action": trace.decision.action,
+                "confidence": trace.decision.confidence.value,
+                "created_at": trace.created_at.isoformat(),
+                "evidence_count": len(trace.evidence),
+                "trace_sha256": trace.trace_sha256,
+            }
+            for trace in self._trace_store.list(
+                limit=limit, evidence_store=self._evidence_store
+            )
+        ]
+
+    def trace(self, trace_id: str) -> dict[str, object] | None:
+        """Retrieve a trace only after verifying its journal and linked evidence."""
+        try:
+            trace = self._trace_store.replay(
+                trace_id, evidence_store=self._evidence_store
+            )
+        except KeyError:
+            return None
+        return trace.model_dump(mode="json")
+
     def close(self) -> None:
         """Close the owned DuckDB catalog connection."""
         if isinstance(self._source, DuckDBConnector):
@@ -105,6 +136,7 @@ def build_service(
     catalog_path: str,
     evidence_path: str = "d2d-evidence.sqlite",
     history_path: str = "d2d-history.sqlite",
+    trace_path: str = "d2d-traces.sqlite",
     provider: str = "rules",
     model: str = "qwen3:8b",
 ) -> CopilotService:
@@ -123,13 +155,15 @@ def build_service(
     else:
         source.close()
         raise ValueError("provider must be 'rules' or 'ollama'")
+    evidence_store = SQLiteEvidenceStore(evidence_path)
     return CopilotService(
         source=source,
         executor=DuckDBQueryExecutor(catalog_path),
-        evidence_store=SQLiteEvidenceStore(evidence_path),
+        evidence_store=evidence_store,
         planner=planner,
         source_id="analytics-catalog",
         history_store=SQLiteQueryHistoryStore(history_path),
+        trace_store=SQLiteDecisionTraceStore(trace_path),
     )
 
 
