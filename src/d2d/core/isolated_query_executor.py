@@ -28,13 +28,13 @@ class WorkerLimits:
 
     process_memory_bytes: int = 2_147_483_648
     max_request_bytes: int = 1_048_576
-    startup_grace_seconds: float = 0.0
+    startup_grace_seconds: float = 2.0
 
     def __post_init__(self) -> None:
         if self.process_memory_bytes < 256 * 1024 * 1024:
             raise ValueError("process_memory_bytes must be at least 256 MiB")
-        if self.max_request_bytes < 256:
-            raise ValueError("max_request_bytes must be at least 256")
+        if not 256 <= self.max_request_bytes <= 1_048_576:
+            raise ValueError("max_request_bytes must be between 256 bytes and 1 MiB")
         if self.startup_grace_seconds < 0:
             raise ValueError("startup_grace_seconds must not be negative")
 
