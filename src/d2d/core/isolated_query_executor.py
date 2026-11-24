@@ -14,7 +14,7 @@ import signal
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from d2d.core.sql_executor import (
     ExecutionLimits,
@@ -118,23 +118,27 @@ class IsolatedDuckDBQueryExecutor:
                 f"isolated DuckDB worker exited with status {process.returncode}: {detail}"
             )
         try:
-            response = json.loads(stdout)
+            parsed: Any = json.loads(stdout)
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             detail = stderr.decode("utf-8", errors="replace")[:512]
             raise QueryExecutionError(
                 f"isolated DuckDB worker returned malformed IPC: {detail}"
             ) from exc
-        if not isinstance(response, dict) or not response.get("ok"):
-            if isinstance(response, dict):
-                error_type = str(response.get("error_type", "WorkerError"))
-                message = str(response.get("error", "worker failed"))
-            else:
-                error_type, message = "WorkerProtocolError", "worker response must be an object"
+        if not isinstance(parsed, dict):
+            raise QueryExecutionError("WorkerProtocolError: response must be an object")
+        response = cast(dict[str, Any], parsed)
+        if not response.get("ok"):
+            error_type = str(response.get("error_type", "WorkerError"))
+            message = str(response.get("error", "worker failed"))
             raise QueryExecutionError(f"{error_type}: {message}")
 
         try:
-            columns = tuple(str(value) for value in response["columns"])
-            rows = tuple(tuple(row) for row in response["rows"])
+            columns_raw = response["columns"]
+            rows_raw = response["rows"]
+            if not isinstance(columns_raw, list) or not isinstance(rows_raw, list):
+                raise TypeError("columns and rows must be arrays")
+            columns = tuple(str(value) for value in columns_raw)
+            rows = tuple(tuple(row) for row in cast(list[list[Any]], rows_raw))
             captured_rows = int(response["captured_rows"])
             output_bytes = int(response["output_bytes"])
             truncated = bool(response["truncated"])
