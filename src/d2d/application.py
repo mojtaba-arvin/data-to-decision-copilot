@@ -6,7 +6,11 @@ from typing import cast
 
 from d2d.connectors.base import DataSource
 from d2d.connectors.duckdb import DuckDBConnector
+from d2d.core.contracts import Confidence, Decision, DecisionClaim
 from d2d.core.decision_trace_store import SQLiteDecisionTraceStore
+from d2d.core.runtime import (
+    DecisionPlan, DecisionPolicy, DecisionRuntime, DeterministicPlanner,
+)
 from d2d.core.evidence_store import SQLiteEvidenceStore
 from d2d.core.model_planning import ModelBackedQueryPlanner, ModelProviderIdentity
 from d2d.core.ollama_provider import OllamaStructuredPlanProvider
@@ -70,6 +74,60 @@ class CopilotService:
             )
         )
         return response
+
+    def decide(
+        self, *, question: str, evidence_id: str,
+        decision: dict[str, object], claims: list[dict[str, object]],
+    ) -> dict[str, object]:
+        """Persist a human-authored proposal only after evidence and policy verification.
+
+        This endpoint deliberately does not synthesize recommendations from query rows.
+        The caller supplies the proposal; the runtime verifies its evidence references,
+        current schema provenance, numeric fact grounding, and fail-closed policy.
+        """
+        from pydantic import ValidationError
+
+        if not question.strip() or not evidence_id.strip():
+            raise ValueError("question and evidence_id must not be empty")
+        try:
+            proposal = Decision.model_validate(decision)
+            claim_items = tuple(DecisionClaim.model_validate(item) for item in claims)
+            plan = DecisionPlan(decision=proposal, claims=claim_items)
+        except (ValidationError, TypeError) as exc:
+            raise ValueError("invalid decision proposal") from exc
+        if proposal.evidence_ids != (evidence_id,):
+            raise ValueError("proposal must reference exactly the submitted evidence_id")
+        policy = DecisionPolicy(
+            policy_id="human-authored-proposal",
+            version="1",
+            allowed_confidence=(Confidence.LOW, Confidence.MEDIUM),
+            reject_truncated_evidence=True,
+            require_reversal_conditions=True,
+            require_alternatives=True,
+        )
+        runtime = DecisionRuntime(
+            evidence_store=self._evidence_store,
+            trace_store=self._trace_store,
+            policy=policy,
+        )
+        result = runtime.run(
+            question=question,
+            evidence_ids=(evidence_id,),
+            planner=DeterministicPlanner(plan_template=plan),
+            expected_schema_fingerprints={
+                "analytics-catalog": self._source.snapshot().fingerprint,
+            },
+        )
+        return {
+            "trace": result.trace.model_dump(mode="json"),
+            "sequence": result.sequence,
+            "policy": {
+                "reference": result.policy_report.policy_reference,
+                "allowed": result.policy_report.allowed,
+                "violations": list(result.policy_report.violations),
+            },
+            "proposal_origin": "caller_supplied",
+        }
 
     def schema(self) -> dict[str, object]:
         snapshot = self._source.snapshot()
