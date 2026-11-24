@@ -329,3 +329,54 @@ def test_policy_rejects_explicit_negation_conflict():
     )
     assert not report.allowed
     assert any("contradictory" in item for item in report.violations)
+
+
+@pytest.mark.parametrize("statement", [
+    "موجودی انبار ۷ واحد است.",
+    "موجودی انبار ٧ واحد است.",
+    "Stock level is 7 units.",
+])
+def test_fact_claim_numeric_grounding_accepts_persian_and_arabic_indic_digits(
+    statement: str,
+):
+    evidence = make_evidence(7)
+    base = make_plan(evidence, statement=statement)
+    fact = base.claims[0].model_copy(update={"kind": ClaimKind.FACT})
+    report = evaluate_policy(
+        DecisionPlan(decision=base.decision, claims=(fact,)),
+        evidence=(evidence,),
+        policy=DecisionPolicy(policy_id="bilingual-numeric-grounding", version="1"),
+    )
+    assert report.allowed, report.violations
+
+
+def test_fact_claim_numeric_grounding_rejects_unsupported_persian_digits():
+    evidence = make_evidence(7)
+    base = make_plan(evidence, statement="موجودی انبار ۷۰۰ واحد است.")
+    fact = base.claims[0].model_copy(update={"kind": ClaimKind.FACT})
+    report = evaluate_policy(
+        DecisionPlan(decision=base.decision, claims=(fact,)),
+        evidence=(evidence,),
+        policy=DecisionPolicy(policy_id="bilingual-numeric-grounding", version="1"),
+    )
+    assert not report.allowed
+    assert any("700" in item for item in report.violations)
+
+
+def test_direct_fact_conflict_signature_normalizes_persian_digits():
+    evidence = make_evidence(7).model_copy(update={"rows": ((7,), (8,)), "row_count": 2})
+    base = make_plan(evidence, statement="موجودی انبار ۷ واحد است.")
+    first = base.claims[0].model_copy(
+        update={"kind": ClaimKind.FACT, "statement": "موجودی انبار ۷ واحد است."}
+    )
+    second = first.model_copy(
+        update={"claim_id": "inventory-8", "statement": "موجودی انبار ۸ واحد است."}
+    )
+    decision = base.decision.model_copy(update={"rationale": "موجودی نیازمند بررسی است."})
+    report = evaluate_policy(
+        DecisionPlan(decision=decision, claims=(first, second)),
+        evidence=(evidence,),
+        policy=DecisionPolicy(policy_id="bilingual-conflict", version="1"),
+    )
+    assert not report.allowed
+    assert any("contradictory" in item for item in report.violations)
