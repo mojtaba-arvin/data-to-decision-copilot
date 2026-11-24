@@ -28,8 +28,16 @@ quotas, and tenant isolation are implemented.
 
 ## Operational limits
 
-- DuckDB limits are not an operating-system sandbox. Run untrusted workloads in
-  a restricted process/container with filesystem and CPU/memory limits.
+- The default executor runs DuckDB in the service process and is intended only
+  for trusted local catalogs. On POSIX, `--isolated-worker` opts into a fresh,
+  supervised child process for each query. The parent enforces a wall-clock
+  deadline, bounded IPC, and process-group termination; the worker applies CPU,
+  address-space, file-descriptor, and file-size limits before importing DuckDB.
+- The supervised worker is process-level isolation, not a complete OS sandbox.
+  It does not independently deny network egress or confine filesystem reads.
+  Deployments handling untrusted catalogs must add OS/container controls: mount
+  only required catalog inputs read-only, deny network egress, and restrict access
+  to unrelated filesystem paths. The flag is POSIX-only and remains opt-in.
 - A schema fingerprint re-check detects schema changes during planning, but it
   is not a cross-process transaction or snapshot-isolation guarantee.
 - SQLite hash chains detect accidental or partial tampering; they do not prevent
