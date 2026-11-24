@@ -11,6 +11,7 @@ from typing import Any
 
 from d2d.core.contracts import DecisionTrace
 from d2d.core.decision_trace import EvidenceStore, verify_decision_trace
+from d2d.core.journal_backup import JournalBackupReport, create_verified_backup
 
 SCHEMA_VERSION = 1
 GENESIS = "0" * 64
@@ -149,6 +150,17 @@ class SQLiteDecisionTraceStore:
                 "SELECT COUNT(*) AS total FROM decision_trace_journal"
             ).fetchone()
         return int(row["total"])
+
+    def backup(self, destination: str | Path) -> JournalBackupReport:
+        """Create a verified, atomic snapshot without modifying the live trace journal."""
+        report = self.verify()
+        if not report.valid:
+            raise ValueError(f"cannot back up an invalid decision trace journal: {report.error}")
+        return create_verified_backup(
+            self.path, destination,
+            verify=lambda path: SQLiteDecisionTraceStore(path).verify(),
+            table_name="decision_trace_journal",
+        )
 
     def verify(
         self,

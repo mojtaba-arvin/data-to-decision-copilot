@@ -159,3 +159,42 @@ def test_append_rejects_modified_in_memory_trace(tmp_path: Path):
         store.append(modified)
 
     assert store.count() == 0
+
+
+
+def test_verified_backup_preserves_trace_chain(tmp_path: Path) -> None:
+    from d2d.core.contracts import DecisionClaim
+    from d2d.core.decision_trace import create_decision_trace
+    from d2d.core.evidence import create_execution_evidence
+    from d2d.core.evidence_store import SQLiteEvidenceStore
+    from d2d.core.sql_executor import QueryResult
+
+    evidence_store = SQLiteEvidenceStore(tmp_path / "evidence.sqlite")
+    evidence = create_execution_evidence(
+        sql="SELECT 7 AS value", dialect="duckdb",
+        result=QueryResult(columns=("value",), rows=((7,),), captured_rows=1,
+                           output_bytes=8, truncated=False),
+        source_id="warehouse", schema_fingerprint="a" * 64, execution_ms=1.0,
+    )
+    evidence_store.append(evidence)
+    trace = create_decision_trace(
+        question="What is the observed value?",
+        decision=Decision(
+            action="Review value", rationale="Observed value is 7.",
+            evidence_ids=(evidence.evidence_id,), confidence=Confidence.LOW,
+        ),
+        claims=(DecisionClaim(
+            claim_id="observed-value", statement="Observed value is 7.",
+            evidence_ids=(evidence.evidence_id,),
+        ),),
+        planner_version="test-planner-v1", policy_version="test-policy-v1",
+        evidence_store=evidence_store,
+    )
+    source = tmp_path / "traces.sqlite"
+    store = SQLiteDecisionTraceStore(source)
+    store.append(trace)
+    destination = tmp_path / "backups" / "traces-001.sqlite"
+    report = store.backup(destination)
+    assert report.records == 1
+    assert SQLiteDecisionTraceStore(destination).verify().valid
+    assert store.count() == 1

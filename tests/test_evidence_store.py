@@ -83,3 +83,28 @@ def test_verifier_detects_payload_tampering(tmp_path: Path):
         "invalid evidence: evidence query digest does not match SQL",
         "record digest mismatch",
     }
+
+
+
+def test_verified_backup_preserves_evidence_chain_and_never_overwrites(tmp_path: Path) -> None:
+    from d2d.core.evidence import create_execution_evidence
+    from d2d.core.sql_executor import QueryResult
+
+    source = tmp_path / "evidence.sqlite"
+    store = SQLiteEvidenceStore(source)
+    evidence = create_execution_evidence(
+        sql="SELECT 7 AS value", dialect="duckdb",
+        result=QueryResult(columns=("value",), rows=((7,),), captured_rows=1,
+                           output_bytes=8, truncated=False),
+        source_id="warehouse", schema_fingerprint="a" * 64, execution_ms=1.0,
+    )
+    store.append(evidence)
+    destination = tmp_path / "backups" / "evidence-001.sqlite"
+    report = store.backup(destination)
+    assert report.records == 1
+    assert report.bytes == destination.stat().st_size
+    assert len(report.sha256) == 64
+    assert store.count() == 1
+    assert SQLiteEvidenceStore(destination).verify().valid
+    with pytest.raises(FileExistsError):
+        store.backup(destination)

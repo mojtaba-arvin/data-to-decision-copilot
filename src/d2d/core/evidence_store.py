@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from d2d.core.contracts import Evidence, EvidenceStatus
+from d2d.core.journal_backup import JournalBackupReport, create_verified_backup
 
 SCHEMA_VERSION = 1
 GENESIS = "0" * 64
@@ -154,6 +155,17 @@ class SQLiteEvidenceStore:
                 "SELECT COUNT(*) AS total FROM evidence_journal"
             ).fetchone()
         return int(row["total"])
+
+    def backup(self, destination: str | Path) -> JournalBackupReport:
+        """Create a verified, atomic snapshot without modifying the live journal."""
+        report = self.verify()
+        if not report.valid:
+            raise ValueError(f"cannot back up an invalid evidence journal: {report.error}")
+        return create_verified_backup(
+            self.path, destination,
+            verify=lambda path: SQLiteEvidenceStore(path).verify(),
+            table_name="evidence_journal",
+        )
 
     def verify(self) -> VerificationReport:
         """Recompute evidence, record, sequence, and complete chain digests."""
