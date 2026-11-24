@@ -1,0 +1,49 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "data-to-decision-copilot"
+version = "0.1.0"
+description = "Evidence-backed, read-only natural-language analytics and decision support"
+readme = "README.md"
+requires-python = ">=3.13"
+license = "MIT"
+authors = [{ name = "Data-to-Decision Copilot contributors" }]
+
+dependencies = [
+  "pydantic>=2.10,<3",
+  "sqlglot>=26,<29",
+  "duckdb>=1.2,<2",
+]
+
+[project.scripts]
+d2d = "d2d.cli:main"
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3",
+  "pytest-cov>=6.0",
+  "pyright>=1.1.390",
+  "ruff>=0.9",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/d2d"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+ignore = ["E501"]
+
+[tool.pyright]
+pythonVersion = "3.13"
+typeCheckingMode = "strict"
+include = ["src", "tests"]

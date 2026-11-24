@@ -1,0 +1,143 @@
+"""Shared application service used by the REST, CLI, and MCP interfaces."""
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from typing import cast
+
+from d2d.connectors.base import DataSource
+from d2d.connectors.duckdb import DuckDBConnector
+from d2d.core.evidence_store import SQLiteEvidenceStore
+from d2d.core.model_planning import ModelBackedQueryPlanner, ModelProviderIdentity
+from d2d.core.ollama_provider import OllamaStructuredPlanProvider
+from d2d.core.query_planning import QueryPlanner, QueryPlanningRuntime
+from d2d.core.semantic_planning import RuleBasedSemanticPlanner
+from d2d.core.sql_executor import DuckDBQueryExecutor
+from d2d.query_history import QueryHistoryItem, SQLiteQueryHistoryStore
+
+
+class CopilotService:
+    """One bounded query runtime with a small, process-local question history."""
+
+    def __init__(
+        self,
+        *,
+        source: DataSource,
+        executor: DuckDBQueryExecutor,
+        evidence_store: SQLiteEvidenceStore,
+        planner: QueryPlanner,
+        source_id: str,
+        history_store: SQLiteQueryHistoryStore,
+    ) -> None:
+        self._source = source
+        self._history_store = history_store
+        self._planner = planner
+        self._runtime = QueryPlanningRuntime(
+            source_id=source_id,
+            data_source=source,
+            executor=executor,
+            evidence_store=evidence_store,
+        )
+
+    async def query(self, question: str) -> dict[str, object]:
+        """Execute one natural-language query and return its evidence metadata."""
+        result = await self._runtime.run(question, self._planner)
+        response: dict[str, object] = {
+            "question": question,
+            "columns": list(result.result.columns),
+            "rows": [[_json_value(value) for value in row] for row in result.result.rows],
+            "truncated": result.result.truncated,
+            "sql": result.query.sql,
+            "parameter_count": len(result.query.parameters),
+            "evidence_id": result.evidence_id,
+            "evidence_sequence": result.evidence_sequence,
+            "schema_fingerprint": result.query.schema_fingerprint,
+            "planner_reference": result.planner_reference,
+            "prompt_sha256": result.prompt_sha256,
+            "created_at": datetime.now(UTC).isoformat(),
+        }
+        self._history_store.append(
+            QueryHistoryItem(
+                question=question,
+                evidence_id=result.evidence_id,
+                evidence_sequence=result.evidence_sequence,
+                schema_fingerprint=result.query.schema_fingerprint,
+                planner_reference=result.planner_reference,
+                created_at=str(response["created_at"]),
+            )
+        )
+        return response
+
+    def schema(self) -> dict[str, object]:
+        snapshot = self._source.snapshot()
+        return {
+            "fingerprint": snapshot.fingerprint,
+            "tables": [
+                {
+                    "catalog": table.table.catalog,
+                    "schema": table.table.schema,
+                    "name": table.table.name,
+                    "type": table.table.table_type,
+                    "columns": [
+                        {
+                            "name": column.name,
+                            "type": column.data_type,
+                            "nullable": column.nullable,
+                        }
+                        for column in table.columns
+                    ],
+                }
+                for table in snapshot.tables
+            ],
+        }
+
+    def history(self, *, limit: int = 100) -> list[dict[str, object]]:
+        return [item.as_dict() for item in self._history_store.list(limit=limit)]
+
+    def close(self) -> None:
+        """Close the owned DuckDB catalog connection."""
+        if isinstance(self._source, DuckDBConnector):
+            self._source.close()
+        self._history_store.close()
+
+
+def build_service(
+    *,
+    catalog_path: str,
+    evidence_path: str = "d2d-evidence.sqlite",
+    history_path: str = "d2d-history.sqlite",
+    provider: str = "rules",
+    model: str = "qwen3:8b",
+) -> CopilotService:
+    """Build the same read-only query pipeline for every product interface."""
+    source = DuckDBConnector(catalog_path)
+    source.open()
+    if provider == "rules":
+        planner: QueryPlanner = RuleBasedSemanticPlanner()
+    elif provider == "ollama":
+        planner = ModelBackedQueryPlanner(
+            provider=OllamaStructuredPlanProvider(model=model),
+            provider_identity=ModelProviderIdentity(
+                provider="ollama", model=model, revision=f"local-tag-{model}",
+            ),
+        )
+    else:
+        source.close()
+        raise ValueError("provider must be 'rules' or 'ollama'")
+    return CopilotService(
+        source=source,
+        executor=DuckDBQueryExecutor(catalog_path),
+        evidence_store=SQLiteEvidenceStore(evidence_path),
+        planner=planner,
+        source_id="analytics-catalog",
+        history_store=SQLiteQueryHistoryStore(history_path),
+    )
+
+
+def _json_value(value: object) -> object:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, tuple):
+        return [_json_value(item) for item in cast(tuple[object, ...], value)]
+    if isinstance(value, list):
+        return [_json_value(item) for item in cast(list[object], value)]
+    return str(value)

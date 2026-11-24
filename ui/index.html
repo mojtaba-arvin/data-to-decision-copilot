@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Data-to-Decision Copilot</title>
+  <style>
+    :root { color-scheme: light dark; font: 16px/1.5 system-ui, sans-serif; }
+    body { margin: 0; background: Canvas; color: CanvasText; }
+    main { max-width: 1080px; margin: 0 auto; padding: 2rem 1rem 4rem; }
+    header { display:flex; align-items:center; justify-content:space-between; gap:1rem; }
+    .status { border:1px solid color-mix(in srgb, CanvasText 25%, transparent); border-radius:99px; padding:.25rem .7rem; }
+    form { display:flex; gap:.75rem; margin:2rem 0; }
+    input { flex:1; min-width:0; padding:.9rem; border:1px solid #8888; border-radius:.7rem; background:Canvas; color:CanvasText; }
+    button { border:0; border-radius:.7rem; padding:.8rem 1.1rem; background:#2563eb; color:white; font-weight:650; cursor:pointer; }
+    button:disabled { opacity:.5; cursor:wait; }
+    section { border:1px solid #8885; border-radius:1rem; padding:1rem; margin:1rem 0; overflow:auto; }
+    table { border-collapse:collapse; width:100%; }
+    th,td { text-align:left; border-bottom:1px solid #8885; padding:.6rem; }
+    pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:.85rem; }
+    .muted { opacity:.7; } .error { color:#dc2626; }
+    @media(max-width:600px) { form { flex-direction:column; } header { align-items:flex-start; flex-direction:column; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div><h1>Data-to-Decision Copilot</h1><p class="muted">Read-only analytics · Evidence-backed answers</p></div>
+    <span id="status" class="status">Checking API…</span>
+  </header>
+  <form id="query-form">
+    <input id="question" name="question" required maxlength="4000" placeholder="Ask in English or Persian…">
+    <button id="submit" type="submit">Run query</button>
+  </form>
+  <p id="message" role="status" class="muted">Queries are translated into typed plans and pass through the read-only SQL guard.</p>
+  <section><h2>Result</h2><div id="result" class="muted">No query yet.</div></section>
+  <section><h2>Evidence & execution metadata</h2><pre id="trace" class="muted">Evidence metadata will appear here.</pre></section>
+  <section><h2>Recent questions</h2><ol id="history"><li class="muted">No history yet.</li></ol></section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+async function refresh() {
+  try { const r = await fetch('/health'); if (!r.ok) throw new Error(); $('status').textContent = 'API online'; }
+  catch { $('status').textContent = 'API unavailable'; }
+  try {
+    const r = await fetch('/v1/history'); const data = await r.json();
+    $('history').innerHTML = '';
+    for (const item of data.items || []) {
+      const li = document.createElement('li');
+      const button = document.createElement('button'); button.textContent = item.question;
+      button.addEventListener('click', () => { $('question').value = item.question; });
+      li.append(button, document.createTextNode(' · ' + item.evidence_id)); $('history').append(li);
+    }
+  } catch { /* History is optional until the API is connected. */ }
+}
+$('query-form').addEventListener('submit', async (event) => {
+  event.preventDefault(); $('submit').disabled = true; $('message').textContent = 'Executing…';
+  try {
+    const response = await fetch('/v1/query', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({question:$('question').value})
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Query failed');
+    const table = document.createElement('table');
+    const head = document.createElement('tr');
+    for (const col of data.columns) { const th = document.createElement('th'); th.textContent = col; head.append(th); }
+    const thead = document.createElement('thead'); thead.append(head); table.append(thead);
+    const tbody = document.createElement('tbody');
+    for (const row of data.rows) { const tr = document.createElement('tr'); for (const value of row) { const td = document.createElement('td'); td.textContent = value == null ? 'NULL' : String(value); tr.append(td); } tbody.append(tr); }
+    table.append(tbody); $('result').replaceChildren(table);
+    $('trace').textContent = JSON.stringify({
+      evidence_id:data.evidence_id, evidence_sequence:data.evidence_sequence,
+      schema_fingerprint:data.schema_fingerprint, planner_reference:data.planner_reference,
+      prompt_sha256:data.prompt_sha256, sql:data.sql, parameter_count:data.parameter_count,
+      truncated:data.truncated
+    }, null, 2);
+    $('message').textContent = data.truncated ? 'Result is truncated by configured limits.' : 'Query completed with persisted evidence.';
+    await refresh();
+  } catch (error) { $('message').textContent = error.message; $('message').className = 'error'; }
+  finally { $('submit').disabled = false; }
+});
+refresh();
+</script>
+</body>
+</html>
