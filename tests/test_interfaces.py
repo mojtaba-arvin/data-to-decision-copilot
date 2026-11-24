@@ -113,8 +113,7 @@ def test_rest_api_serves_query_history_and_schema(catalog: Path, tmp_path: Path)
         assert len(traces["items"]) == 1
         assert traces["items"][0]["trace_id"] == decision_result["trace"]["trace_id"]
 
-        rejected_body = dict(decision_body)
-        rejected_body["decision"] = dict(decision_body["decision"])
+        rejected_body = json.loads(json.dumps(decision_body))
         rejected_body["decision"]["confidence"] = "high"
         rejected_request = Request(
             base + "/v1/decision", data=json.dumps(rejected_body).encode(),
