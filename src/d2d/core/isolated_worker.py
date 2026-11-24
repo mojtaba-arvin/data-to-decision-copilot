@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import os
 import sys
-from typing import Any
+from typing import Any, cast
 
 
 def _apply_process_limits(request: dict[str, Any]) -> None:
@@ -30,9 +30,10 @@ def main() -> int:
         raw = sys.stdin.buffer.read(1_048_577)
         if len(raw) > 1_048_576:
             raise ValueError("worker request exceeds 1 MiB")
-        request = json.loads(raw)
-        if not isinstance(request, dict):
+        parsed: Any = json.loads(raw)
+        if not isinstance(parsed, dict):
             raise ValueError("worker request must be an object")
+        request = cast(dict[str, Any], parsed)
         _apply_process_limits(request)
 
         # Import native/query dependencies only after applying OS resource limits.
@@ -46,11 +47,14 @@ def main() -> int:
             max_bytes=int(request["max_bytes"]),
             memory_limit=str(request["duckdb_memory_limit"]),
         )
+        parameters = request.get("parameters")
+        if parameters is not None and not isinstance(parameters, list):
+            raise ValueError("worker parameters must be an array")
         executor = DuckDBQueryExecutor(str(request["database"]), limits=limits)
         result = asyncio.run(
             executor.execute(
                 str(request["sql"]),
-                request.get("parameters"),
+                cast(list[object] | None, parameters),
                 dialect=str(request.get("dialect", "duckdb")),
             )
         )
