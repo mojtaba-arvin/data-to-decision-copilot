@@ -1,3 +1,5 @@
+import os
+import stat
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
@@ -108,3 +110,26 @@ def test_verified_backup_preserves_evidence_chain_and_never_overwrites(tmp_path:
     assert SQLiteEvidenceStore(destination).verify().valid
     with pytest.raises(FileExistsError):
         store.backup(destination)
+
+
+
+def test_verified_backup_fsyncs_snapshot_and_publication_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = SQLiteEvidenceStore(tmp_path / "evidence.sqlite")
+    store.append(make_evidence())
+    destination = tmp_path / "backups" / "evidence-durable.sqlite"
+    original_fsync = os.fsync
+    synced_modes: list[int] = []
+
+    def recording_fsync(descriptor: int) -> None:
+        synced_modes.append(os.fstat(descriptor).st_mode)
+        original_fsync(descriptor)
+
+    monkeypatch.setattr(os, "fsync", recording_fsync)
+    report = store.backup(destination)
+
+    assert report.path == str(destination.resolve())
+    assert any(stat.S_ISREG(mode) for mode in synced_modes)
+    assert any(stat.S_ISDIR(mode) for mode in synced_modes)
+    assert SQLiteEvidenceStore(destination).verify().valid
