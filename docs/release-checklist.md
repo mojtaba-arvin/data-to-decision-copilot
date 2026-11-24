@@ -45,3 +45,16 @@ exact candidate commit. A green check on an earlier head SHA is not sufficient.
 - [ ] Merge only after all required checks are green on the current head SHA.
 - [ ] Tag the exact merged commit and publish the matching artifacts.
 - [ ] Verify the published install instructions against the released artifacts.
+
+
+## Resource and journal-growth measurements
+
+The synthetic benchmark reports `peak_rss_bytes` using the operating system's
+process high-water RSS counter. This is the process-wide maximum, includes setup
+and warm-up, and is not an isolated DuckDB allocation measurement.
+
+The `evidence_journal` report records committed evidence row count and SQLite
+main-database file size after the measured query loop. It does not imply a
+retention or compaction policy: both journals remain append-only, and safe
+compaction still requires a verifiable checkpoint and backup design. WAL
+sidecars are not included in this size.
