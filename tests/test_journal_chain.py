@@ -4,6 +4,7 @@ import hashlib
 import json
 import sqlite3
 from pathlib import Path
+from typing import Any
 
 from d2d.core.journal_chain import GENESIS, _canonical, verify_archive_chain
 
@@ -36,8 +37,8 @@ def make_segment(
     entries: list[tuple[int, str]] = []
     for sequence in range(first, last + 1):
         evidence_id = f"evidence-{sequence}"
-        payload = f"payload-{sequence}"
-        record_digest = hashlib.sha256(payload.encode()).hexdigest()
+        record_payload = f"payload-{sequence}"
+        record_digest = hashlib.sha256(record_payload.encode()).hexdigest()
         entry_digest = hashlib.sha256(
             _canonical(
                 {
@@ -51,14 +52,14 @@ def make_segment(
         ).hexdigest()
         connection.execute(
             "INSERT INTO evidence_journal VALUES (?, ?, ?, ?, ?, ?)",
-            (sequence, evidence_id, payload, record_digest, previous, entry_digest),
+            (sequence, evidence_id, record_payload, record_digest, previous, entry_digest),
         )
         entries.append((sequence, entry_digest))
         previous = entry_digest
     connection.commit()
     connection.close()
 
-    payload = {
+    payload: dict[str, Any] = {
         "format_version": 2,
         "journal_kind": "evidence",
         "database_file": database.name,
@@ -75,9 +76,17 @@ def make_segment(
         "database_sha256": hashlib.sha256(database.read_bytes()).hexdigest(),
     }
     digest = hashlib.sha256(_canonical(payload)).hexdigest()
-    document = {**payload, "manifest_sha256": digest}
-    manifest.write_bytes(_canonical(document) + b"\n")
+    manifest.write_bytes(_canonical({**payload, "manifest_sha256": digest}) + b"\n")
     return database, manifest, digest, entries[-1][1]
+
+
+def refresh_manifest(database: Path, manifest: Path) -> None:
+    document = json.loads(manifest.read_text(encoding="utf-8"))
+    document["database_bytes"] = database.stat().st_size
+    document["database_sha256"] = hashlib.sha256(database.read_bytes()).hexdigest()
+    payload = {key: value for key, value in document.items() if key != "manifest_sha256"}
+    document["manifest_sha256"] = hashlib.sha256(_canonical(payload)).hexdigest()
+    manifest.write_bytes(_canonical(document) + b"\n")
 
 
 def segment_verifier(path: Path, first: int, previous: str) -> Report:
@@ -133,3 +142,98 @@ def test_verifies_two_segments_with_continuous_sequence_and_hash_links(tmp_path:
     assert report.last_sequence == 4
     assert report.head_sha256 == second[3]
 
+
+def test_rejects_sequence_gap(tmp_path: Path):
+    first = make_segment(
+        tmp_path, name="segment-1", first=1, last=2,
+        previous_entry=GENESIS, previous_manifest=GENESIS,
+    )
+    second = make_segment(
+        tmp_path, name="segment-2", first=4, last=5,
+        previous_entry=first[3], previous_manifest=first[2],
+    )
+    report = verify_archive_chain(
+        [(first[0], first[1]), (second[0], second[1])],
+        journal_kind="evidence", schema_version=1, verify_segment=segment_verifier,
+    )
+    assert not report.valid
+    assert "sequence gap" in (report.error or "")
+
+
+def test_rejects_reordered_segments(tmp_path: Path):
+    first = make_segment(
+        tmp_path, name="segment-1", first=1, last=1,
+        previous_entry=GENESIS, previous_manifest=GENESIS,
+    )
+    second = make_segment(
+        tmp_path, name="segment-2", first=2, last=2,
+        previous_entry=first[3], previous_manifest=first[2],
+    )
+    report = verify_archive_chain(
+        [(second[0], second[1]), (first[0], first[1])],
+        journal_kind="evidence", schema_version=1, verify_segment=segment_verifier,
+    )
+    assert not report.valid
+    assert "sequence gap" in (report.error or "")
+
+
+def test_rejects_database_tampering(tmp_path: Path):
+    segment = make_segment(
+        tmp_path, name="segment-1", first=1, last=1,
+        previous_entry=GENESIS, previous_manifest=GENESIS,
+    )
+    with segment[0].open("ab") as stream:
+        stream.write(b"tamper")
+    report = verify_archive_chain(
+        [(segment[0], segment[1])],
+        journal_kind="evidence", schema_version=1, verify_segment=segment_verifier,
+    )
+    assert not report.valid
+    assert "database size mismatch" in (report.error or "") or "database digest mismatch" in (report.error or "")
+
+
+def test_rejects_record_tampering_even_when_manifest_is_recomputed(tmp_path: Path):
+    segment = make_segment(
+        tmp_path, name="segment-1", first=1, last=1,
+        previous_entry=GENESIS, previous_manifest=GENESIS,
+    )
+    with sqlite3.connect(segment[0]) as connection:
+        connection.execute(
+            "UPDATE evidence_journal SET payload = 'forged' WHERE sequence = 1"
+        )
+    refresh_manifest(segment[0], segment[1])
+
+    report = verify_archive_chain(
+        [(segment[0], segment[1])],
+        journal_kind="evidence", schema_version=1, verify_segment=segment_verifier,
+    )
+    assert not report.valid
+    assert "journal segment verification failed" in (report.error or "")
+
+
+def test_rejects_wrong_journal_kind(tmp_path: Path):
+    segment = make_segment(
+        tmp_path, name="segment-1", first=1, last=1,
+        previous_entry=GENESIS, previous_manifest=GENESIS,
+    )
+    report = verify_archive_chain(
+        [(segment[0], segment[1])],
+        journal_kind="decision_trace", schema_version=1, verify_segment=segment_verifier,
+    )
+    assert not report.valid
+    assert "journal kind mismatch" in (report.error or "")
+
+
+def test_rejects_noncanonical_manifest(tmp_path: Path):
+    segment = make_segment(
+        tmp_path, name="segment-1", first=1, last=1,
+        previous_entry=GENESIS, previous_manifest=GENESIS,
+    )
+    document = json.loads(segment[1].read_text(encoding="utf-8"))
+    segment[1].write_text(json.dumps(document, indent=2), encoding="utf-8")
+    report = verify_archive_chain(
+        [(segment[0], segment[1])],
+        journal_kind="evidence", schema_version=1, verify_segment=segment_verifier,
+    )
+    assert not report.valid
+    assert "not canonical" in (report.error or "")
