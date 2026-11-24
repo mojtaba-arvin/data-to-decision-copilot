@@ -20,7 +20,7 @@ def _metrics(
 ) -> dict[str, Any]:
     confusion = {gold: {pred: 0 for pred in LABELS} for gold in LABELS}
     correct = 0
-    calibration_bins = [
+    calibration_bins: list[dict[str, int | float]] = [
         {"count": 0, "confidence_sum": 0.0, "accuracy_sum": 0}
         for _ in range(bins)
     ]
@@ -51,7 +51,7 @@ def _metrics(
         per_label[label] = {"precision": precision, "recall": recall, "f1": f1}
 
     ece = 0.0
-    rendered_bins = []
+    rendered_bins: list[dict[str, int | float]] = []
     for bucket in calibration_bins:
         count = bucket["count"]
         if count:
