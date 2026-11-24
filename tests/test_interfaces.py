@@ -44,6 +44,23 @@ def test_shared_service_executes_query_and_records_history(catalog: Path, tmp_pa
         service.close()
 
 
+def test_shared_service_can_execute_queries_in_isolated_worker(
+    catalog: Path, tmp_path: Path
+) -> None:
+    service = build_service(
+        catalog_path=str(catalog),
+        evidence_path=str(tmp_path / "isolated-evidence.sqlite"),
+        isolated_worker=True,
+    )
+    try:
+        result = asyncio.run(service.query("count rows in orders"))
+        assert result["rows"] == [[2]]
+        assert result["evidence_id"]
+        assert service.history()[0]["evidence_sequence"] == 1
+    finally:
+        service.close()
+
+
 def test_rest_api_serves_query_history_and_schema(catalog: Path, tmp_path: Path) -> None:
     service = build_service(
         catalog_path=str(catalog), evidence_path=str(tmp_path / "api-evidence.sqlite"),
