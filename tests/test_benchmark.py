@@ -51,3 +51,27 @@ def test_persian_english_semantic_benchmark_exact_plan_accuracy(tmp_path: Path) 
     assert report.passed == 3
     assert report.rejected == 1
     assert report.accuracy == 3 / 4
+
+
+
+def test_peak_rss_reports_non_negative_bytes_or_unavailable() -> None:
+    from benchmarks.run_benchmark import peak_rss_bytes
+
+    value = peak_rss_bytes()
+    assert value is None or value >= 0
+
+
+def test_sqlite_journal_metrics_reports_records_and_file_size(tmp_path: Path) -> None:
+    import sqlite3
+
+    from benchmarks.run_benchmark import sqlite_journal_metrics
+
+    database = tmp_path / "evidence.sqlite"
+    with sqlite3.connect(database) as connection:
+        connection.execute("CREATE TABLE evidence_journal (sequence INTEGER PRIMARY KEY)")
+        connection.executemany("INSERT INTO evidence_journal(sequence) VALUES (?)", [(1,), (2,), (3,)])
+
+    report = sqlite_journal_metrics(database)
+    assert report["records"] == 3
+    assert report["bytes"] == database.stat().st_size
+    assert report["bytes"] > 0
