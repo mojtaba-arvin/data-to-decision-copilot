@@ -8,8 +8,6 @@ from typing import Any
 
 from d2d.core.journal_chain import GENESIS, verify_archive_chain
 
-
-
 class Report:
     def __init__(self, valid: bool, records_checked: int) -> None:
         self.valid = valid
