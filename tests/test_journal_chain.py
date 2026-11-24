@@ -15,7 +15,6 @@ def _canonical_for_test(value: Any) -> bytes:
     ).encode("utf-8")
 
 
-
 class Report:
     def __init__(self, valid: bool, records_checked: int) -> None:
         self.valid = valid
