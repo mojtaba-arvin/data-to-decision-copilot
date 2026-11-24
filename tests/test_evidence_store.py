@@ -1,6 +1,6 @@
 import os
-import stat
 import sqlite3
+import stat
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from pathlib import Path
