@@ -48,7 +48,8 @@ def test_isolated_worker_enforces_parent_wall_clock_deadline(tmp_path: Path) -> 
     async def scenario() -> None:
         executor = IsolatedDuckDBQueryExecutor(
             tmp_path / "isolated.duckdb",
-            limits=ExecutionLimits(timeout_seconds=0.01, max_rows=1, max_bytes=128),
+            limits=ExecutionLimits(timeout_seconds=0.05, max_rows=1, max_bytes=128),
+            worker_limits=WorkerLimits(startup_grace_seconds=0.0),
         )
         with pytest.raises(QueryExecutionError, match="wall-clock limit"):
             await executor.execute("SELECT sum(i) FROM range(100000000000) AS t(i)")
