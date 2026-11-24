@@ -64,6 +64,7 @@ def test_ollama_sends_json_schema_request_to_loopback(monkeypatch: pytest.Monkey
     assert request.full_url == "http://127.0.0.1:11434/api/generate"
     assert payload["model"] == "qwen3:8b"
     assert payload["stream"] is False
+    assert payload["think"] is False
     assert payload["format"] == generation_request().response_schema
     assert payload["options"]["temperature"] == 0
     assert captured["timeout"] == 30.0
