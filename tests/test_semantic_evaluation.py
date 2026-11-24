@@ -1,4 +1,5 @@
 import json
+from typing import Any
 from pathlib import Path
 
 import pytest
@@ -66,7 +67,9 @@ def test_evaluator_reports_overall_language_category_and_calibration_slices():
         ),
     ],
 )
-def test_evaluator_rejects_incomplete_or_invalid_predictions(predictions, message):
+def test_evaluator_rejects_incomplete_or_invalid_predictions(
+    predictions: dict[str, dict[str, Any]], message: str
+):
     cases = [{"id": "x", "language": "en", "category": "numeric", "gold_label": "supported"}]
     with pytest.raises(ValueError, match=message):
         evaluate_predictions(cases, predictions)
