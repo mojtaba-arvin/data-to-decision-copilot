@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, ci/c3-real-ollama-smoke]
   pull_request:
   workflow_dispatch:
     inputs:
@@ -88,7 +88,7 @@ jobs:
 
   real-ollama-smoke:
     name: Optional real Ollama inference
-    if: github.event_name == 'workflow_dispatch' && inputs.run_real_ollama
+    if: (github.event_name == 'workflow_dispatch' && inputs.run_real_ollama) || github.ref == 'refs/heads/ci/c3-real-ollama-smoke'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -116,11 +116,11 @@ jobs:
           cat /tmp/ollama.log
           exit 1
       - name: Pull local model
-        run: ollama pull qwen3:8b
+        run: ollama pull qwen2.5:3b
       - name: Install project
         run: uv sync --locked --all-groups
       - name: Real model to guarded query smoke
         env:
-          D2D_OLLAMA_MODEL: qwen3:8b
+          D2D_OLLAMA_MODEL: qwen2.5:3b
         run: uv run --locked python scripts/ollama_smoke.py
 

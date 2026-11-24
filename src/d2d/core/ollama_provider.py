@@ -57,6 +57,10 @@ class OllamaStructuredPlanProvider(StructuredPlanProvider):
                 "num_predict": min(self.max_output_tokens, request.max_output_bytes),
             },
         }
+        # Qwen3 exposes a separate thinking channel by default. Disable it for
+        # strict structured-output requests so the response field contains JSON.
+        if self.model.casefold().startswith("qwen3"):
+            payload["think"] = False
         body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
         http_request = Request(
             f"{self.base_url.rstrip('/')}/api/generate",
