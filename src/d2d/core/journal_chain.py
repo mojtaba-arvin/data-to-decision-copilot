@@ -168,7 +168,7 @@ def verify_archive_chain(
                 raise ValueError(f"segment {index}: verifier record count mismatch")
 
             table = "evidence_journal" if journal_kind == "evidence" else "decision_trace_journal"
-            with closing(sqlite3.connect(f"file:{database.as_posix()}?mode=ro", uri=True)) as connection:
+            with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True)) as connection:
                 bounds = connection.execute(
                     f"SELECT MIN(sequence), MAX(sequence), "
                     f"MIN(CASE WHEN sequence = ? THEN entry_sha256 END), "
