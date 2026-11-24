@@ -7,6 +7,7 @@ deny network egress and confine filesystem access with OS/container controls.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import signal
@@ -158,8 +159,6 @@ class IsolatedDuckDBQueryExecutor:
     async def _terminate(process: asyncio.subprocess.Process) -> None:
         if process.returncode is not None:
             return
-        try:
+        with contextlib.suppress(ProcessLookupError):
             os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
         await process.communicate()
