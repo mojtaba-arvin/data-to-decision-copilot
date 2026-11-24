@@ -5,7 +5,11 @@ import pytest
 
 from d2d.core.evidence import create_execution_evidence
 from d2d.core.evidence_store import SQLiteEvidenceStore
-from d2d.core.journal_archive import create_archive_manifest, verify_archive_manifest
+from d2d.core.journal_archive import (
+    create_archive_manifest,
+    restore_archive_snapshot,
+    verify_archive_manifest,
+)
 from d2d.core.sql_executor import QueryResult
 
 
@@ -141,3 +145,85 @@ def test_manifest_is_no_overwrite_and_journal_kind_bound(tmp_path: Path):
     )
     assert not report.valid
     assert "journal kind mismatch" in (report.error or "")
+
+
+def test_restore_publishes_only_a_verified_snapshot(tmp_path: Path):
+    snapshot = tmp_path / "snapshot.sqlite"
+    manifest = tmp_path / "snapshot.manifest.json"
+    destination = tmp_path / "restored" / "snapshot.sqlite"
+    make_store(tmp_path / "live.sqlite").backup(snapshot)
+    create_archive_manifest(
+        snapshot,
+        manifest,
+        journal_kind="evidence",
+        schema_version=1,
+        verify=lambda path: SQLiteEvidenceStore(path).verify(),
+    )
+
+    restored = restore_archive_snapshot(
+        snapshot,
+        manifest,
+        destination,
+        journal_kind="evidence",
+        schema_version=1,
+        verify=lambda path: SQLiteEvidenceStore(path).verify(),
+    )
+
+    assert restored.valid
+    assert restored.records_checked == 1
+    assert destination.read_bytes() == snapshot.read_bytes()
+    assert SQLiteEvidenceStore(destination).verify().valid
+
+
+def test_restore_refuses_to_overwrite_existing_destination(tmp_path: Path):
+    snapshot = tmp_path / "snapshot.sqlite"
+    manifest = tmp_path / "snapshot.manifest.json"
+    destination = tmp_path / "restored" / "snapshot.sqlite"
+    make_store(tmp_path / "live.sqlite").backup(snapshot)
+    create_archive_manifest(
+        snapshot,
+        manifest,
+        journal_kind="evidence",
+        schema_version=1,
+        verify=lambda path: SQLiteEvidenceStore(path).verify(),
+    )
+    destination.parent.mkdir()
+    destination.write_bytes(b"operator data")
+
+    with pytest.raises(FileExistsError):
+        restore_archive_snapshot(
+            snapshot,
+            manifest,
+            destination,
+            journal_kind="evidence",
+            schema_version=1,
+            verify=lambda path: SQLiteEvidenceStore(path).verify(),
+        )
+    assert destination.read_bytes() == b"operator data"
+
+
+def test_restore_rejects_tampered_archive_without_publishing(tmp_path: Path):
+    snapshot = tmp_path / "snapshot.sqlite"
+    manifest = tmp_path / "snapshot.manifest.json"
+    destination = tmp_path / "restored" / "snapshot.sqlite"
+    make_store(tmp_path / "live.sqlite").backup(snapshot)
+    create_archive_manifest(
+        snapshot,
+        manifest,
+        journal_kind="evidence",
+        schema_version=1,
+        verify=lambda path: SQLiteEvidenceStore(path).verify(),
+    )
+    with snapshot.open("ab") as stream:
+        stream.write(b"tamper")
+
+    with pytest.raises(ValueError, match="invalid archive"):
+        restore_archive_snapshot(
+            snapshot,
+            manifest,
+            destination,
+            journal_kind="evidence",
+            schema_version=1,
+            verify=lambda path: SQLiteEvidenceStore(path).verify(),
+        )
+    assert not destination.exists()
