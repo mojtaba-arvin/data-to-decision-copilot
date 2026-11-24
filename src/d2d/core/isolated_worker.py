@@ -62,7 +62,7 @@ def main() -> int:
             "output_bytes": result.output_bytes,
             "truncated": result.truncated,
         }
-    except BaseException as exc:
+    except Exception as exc:
         response = {
             "ok": False,
             "error_type": type(exc).__name__,
