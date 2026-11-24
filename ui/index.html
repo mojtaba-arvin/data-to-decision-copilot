@@ -35,6 +35,20 @@
   <p id="message" role="status" class="muted">Queries are translated into typed plans and pass through the read-only SQL guard.</p>
   <section><h2>Result</h2><div id="result" class="muted">No query yet.</div></section>
   <section><h2>Evidence & execution metadata</h2><pre id="trace" class="muted">Evidence metadata will appear here.</pre></section>
+  <section id="decision-section" hidden>
+    <h2>Submit a decision proposal</h2>
+    <p class="muted">This is a human-authored proposal, not an AI-generated recommendation. The server verifies evidence lineage, current schema, numeric fact grounding, and policy. It does not perform general semantic entailment.</p>
+    <form id="decision-form">
+      <label>Proposed action <input id="decision-action" required maxlength="1000"></label>
+      <label>Rationale <input id="decision-rationale" required maxlength="2000"></label>
+      <label>Evidence-backed claim <input id="decision-claim" required maxlength="2000"></label>
+      <label>Alternative action <input id="decision-alternative" required maxlength="1000"></label>
+      <label>Alternative trade-off <input id="decision-tradeoff" required maxlength="1000"></label>
+      <label>Condition that would reverse this decision <input id="decision-reversal" required maxlength="1000"></label>
+      <button id="decision-submit" type="submit">Verify and save decision</button>
+    </form>
+    <p id="decision-message" role="status" class="muted">Run a query before submitting a proposal.</p>
+  </section>
   <section><h2>Recent questions</h2><ol id="history"><li class="muted">No history yet.</li></ol></section>
   <section><h2>DecisionTrace history</h2><ol id="decision-traces"><li class="muted">No persisted decision traces.</li></ol><pre id="decision-trace-detail" class="muted">DecisionTrace details will appear here when a decision has been produced and persisted.</pre></section>
 </main>
@@ -82,6 +96,7 @@ async function refresh() {
     $('decision-traces').textContent = 'DecisionTrace journal unavailable or failed integrity verification.';
   }
 }
+let lastQuery = null;
 $('query-form').addEventListener('submit', async (event) => {
   event.preventDefault(); $('submit').disabled = true; $('message').textContent = 'Executing…';
   try {
@@ -98,6 +113,9 @@ $('query-form').addEventListener('submit', async (event) => {
     const tbody = document.createElement('tbody');
     for (const row of data.rows) { const tr = document.createElement('tr'); for (const value of row) { const td = document.createElement('td'); td.textContent = value == null ? 'NULL' : String(value); tr.append(td); } tbody.append(tr); }
     table.append(tbody); $('result').replaceChildren(table);
+    lastQuery = {question: data.question, evidence_id: data.evidence_id};
+    $('decision-section').hidden = false;
+    $('decision-message').textContent = 'Proposal will be linked to evidence ' + data.evidence_id + '.';
     $('trace').textContent = JSON.stringify({
       evidence_id:data.evidence_id, evidence_sequence:data.evidence_sequence,
       schema_fingerprint:data.schema_fingerprint, planner_reference:data.planner_reference,
@@ -108,6 +126,42 @@ $('query-form').addEventListener('submit', async (event) => {
     await refresh();
   } catch (error) { $('message').textContent = error.message; $('message').className = 'error'; }
   finally { $('submit').disabled = false; }
+});
+$('decision-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  if (!lastQuery) { $('decision-message').textContent = 'Run a query first.'; return; }
+  $('decision-submit').disabled = true;
+  $('decision-message').textContent = 'Verifying proposal and evidence…';
+  try {
+    const response = await fetch('/v1/decision', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        question: lastQuery.question,
+        evidence_id: lastQuery.evidence_id,
+        decision: {
+          action: $('decision-action').value,
+          rationale: $('decision-rationale').value,
+          evidence_ids: [lastQuery.evidence_id],
+          confidence: 'medium',
+          alternatives: [{action: $('decision-alternative').value, trade_off: $('decision-tradeoff').value}],
+          reversal_conditions: [$('decision-reversal').value],
+          caveats: ['Proposal is caller-authored; semantic entailment is not automatically established.']
+        },
+        claims: [{
+          claim_id: 'caller-claim-1', statement: $('decision-claim').value,
+          evidence_ids: [lastQuery.evidence_id], kind: 'inference'
+        }]
+      })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Decision rejected');
+    $('decision-message').textContent = 'Decision verified and saved as ' + data.trace.trace_id + ' (sequence ' + data.sequence + ').';
+    $('decision-trace-detail').textContent = JSON.stringify(data.trace, null, 2);
+    await refresh();
+  } catch (error) {
+    $('decision-message').textContent = error.message;
+    $('decision-message').className = 'error';
+  } finally { $('decision-submit').disabled = false; }
 });
 refresh();
 </script>
