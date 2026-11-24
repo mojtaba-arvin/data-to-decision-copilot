@@ -314,6 +314,18 @@ class QueryPlanningResult:
     prompt_sha256: str
 
 
+class QueryExecutor(Protocol):
+    """Execution boundary shared by in-process and supervised query engines."""
+
+    async def execute(
+        self,
+        sql: str,
+        parameters: list[object] | tuple[object, ...] | None = None,
+        *,
+        dialect: str = "duckdb",
+    ) -> QueryResult: ...
+
+
 class QueryPlanningRuntime:
     """Discover schema, plan, compile, execute, and persist execution evidence."""
 
@@ -322,7 +334,7 @@ class QueryPlanningRuntime:
         *,
         source_id: str,
         data_source: DataSource,
-        executor: DuckDBQueryExecutor,
+        executor: QueryExecutor,
         evidence_store: SQLiteEvidenceStore,
     ) -> None:
         if not source_id.strip():
