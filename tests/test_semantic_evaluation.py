@@ -6,7 +6,6 @@ import pytest
 
 from d2d.core.semantic_evaluation import evaluate_predictions
 
-
 CORPUS_PATH = (
     Path(__file__).parent
     / "fixtures"
