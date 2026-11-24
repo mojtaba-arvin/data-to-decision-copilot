@@ -71,3 +71,14 @@ same bearer credential. Keep the service behind a network firewall and rotate
 credentials through the deployment secret manager. This is single-credential
 service authentication, not per-user identity, role-based authorization, or
 tenant isolation; do not expose it as a multi-tenant service.
+
+
+## Verified journal backups (E9 groundwork)
+
+Evidence and DecisionTrace journals support consistent SQLite online backups.
+A backup is accepted only after the source journal verifies, is copied through
+SQLite's backup API, and the copy independently verifies. Publication is atomic
+and refuses to overwrite an existing backup. The report records the backup
+SHA-256, byte size, record count, and chain-head hash. This does not delete,
+compact, or expire journal entries; retention remains intentionally disabled
+until an explicit audit-retention policy and restore/anchor procedure are approved.
