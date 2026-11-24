@@ -9,16 +9,17 @@ from typing import Any
 from d2d.core.journal_chain import GENESIS, verify_archive_chain
 
 
+def _canonical_for_test(value: Any) -> bytes:
+    return json.dumps(
+        value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
+    ).encode("utf-8")
+
+
+
 class Report:
     def __init__(self, valid: bool, records_checked: int) -> None:
         self.valid = valid
         self.records_checked = records_checked
-
-
-def canonical_json(value: Any) -> bytes:
-    return json.dumps(
-        value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
-    ).encode("utf-8")
 
 
 def make_segment(
@@ -46,7 +47,7 @@ def make_segment(
         record_payload = f"payload-{sequence}"
         record_digest = hashlib.sha256(record_payload.encode()).hexdigest()
         entry_digest = hashlib.sha256(
-            canonical_json(
+            _canonical_for_test(
                 {
                     "schema_version": 1,
                     "sequence": sequence,
@@ -81,8 +82,8 @@ def make_segment(
         "database_bytes": database.stat().st_size,
         "database_sha256": hashlib.sha256(database.read_bytes()).hexdigest(),
     }
-    digest = hashlib.sha256(canonical_json(payload)).hexdigest()
-    manifest.write_bytes(canonical_json({**payload, "manifest_sha256": digest}) + b"\n")
+    digest = hashlib.sha256(_canonical_for_test(payload)).hexdigest()
+    manifest.write_bytes(_canonical_for_test({**payload, "manifest_sha256": digest}) + b"\n")
     return database, manifest, digest, entries[-1][1]
 
 
@@ -91,8 +92,8 @@ def refresh_manifest(database: Path, manifest: Path) -> None:
     document["database_bytes"] = database.stat().st_size
     document["database_sha256"] = hashlib.sha256(database.read_bytes()).hexdigest()
     payload = {key: value for key, value in document.items() if key != "manifest_sha256"}
-    document["manifest_sha256"] = hashlib.sha256(canonical_json(payload)).hexdigest()
-    manifest.write_bytes(canonical_json(document) + b"\n")
+    document["manifest_sha256"] = hashlib.sha256(_canonical_for_test(payload)).hexdigest()
+    manifest.write_bytes(_canonical_for_test(document) + b"\n")
 
 
 def segment_verifier(path: Path, first: int, previous: str) -> Report:
@@ -111,7 +112,7 @@ def segment_verifier(path: Path, first: int, previous: str) -> Report:
         if actual_record_digest != record_digest:
             return Report(False, expected_sequence - first)
         actual_entry_digest = hashlib.sha256(
-            canonical_json(
+            _canonical_for_test(
                 {
                     "schema_version": 1,
                     "sequence": sequence,

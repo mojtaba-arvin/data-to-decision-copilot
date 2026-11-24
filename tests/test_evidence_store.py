@@ -133,3 +133,21 @@ def test_verified_backup_fsyncs_snapshot_and_publication_directory(
     assert any(stat.S_ISREG(mode) for mode in synced_modes)
     assert any(stat.S_ISDIR(mode) for mode in synced_modes)
     assert SQLiteEvidenceStore(destination).verify().valid
+
+
+def test_checkpoint_aware_verifier_accepts_non_genesis_segment(tmp_path: Path):
+    store = SQLiteEvidenceStore(tmp_path / "evidence.sqlite")
+    store.append(make_evidence(1))
+    store.append(make_evidence(2))
+    with closing(sqlite3.connect(store.path)) as connection:
+        predecessor = connection.execute(
+            "SELECT entry_sha256 FROM evidence_journal WHERE sequence = 1"
+        ).fetchone()[0]
+        connection.execute("DROP TRIGGER evidence_no_delete")
+        connection.execute("DELETE FROM evidence_journal WHERE sequence = 1")
+        connection.commit()
+
+    assert store.verify_segment(start_sequence=2, previous_sha256=predecessor).valid
+    rejected = store.verify_segment(start_sequence=2, previous_sha256="0" * 64)
+    assert not rejected.valid
+    assert rejected.error == "previous-entry link mismatch"

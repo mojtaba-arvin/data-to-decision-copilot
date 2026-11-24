@@ -184,47 +184,77 @@ class SQLiteDecisionTraceStore:
         evidence_store: EvidenceStore | None = None,
         expected_schema_fingerprints: dict[str, str] | None = None,
     ) -> TraceStoreVerificationReport:
-        """Verify the complete persisted chain and optionally each trace's evidence.
+        """Verify the complete genesis-anchored decision-trace journal."""
+        return self.verify_segment(
+            start_sequence=1,
+            previous_sha256=GENESIS,
+            evidence_store=evidence_store,
+            expected_schema_fingerprints=expected_schema_fingerprints,
+        )
 
-        Without an evidence store this verifies persistence integrity and trace
-        digests only. Supplying an evidence store additionally verifies evidence
-        journal integrity, evidence identity/provenance, and optional schema freshness.
+    def verify_segment(
+        self,
+        *,
+        start_sequence: int,
+        previous_sha256: str,
+        evidence_store: EvidenceStore | None = None,
+        expected_schema_fingerprints: dict[str, str] | None = None,
+    ) -> TraceStoreVerificationReport:
+        """Verify a trace segment against an explicit predecessor checkpoint.
+
+        Supplying an evidence store additionally verifies each trace's evidence
+        references. The checkpoint itself must be authenticated by the archive
+        chain verifier or another trusted anchor.
         """
+        if start_sequence < 1:
+            raise ValueError("start_sequence must be positive")
+        if len(previous_sha256) != 64:
+            raise ValueError("previous_sha256 must be a SHA-256 digest")
+        try:
+            int(previous_sha256, 16)
+        except ValueError as exc:
+            raise ValueError("previous_sha256 must be a SHA-256 digest") from exc
+
         with closing(self._connect()) as connection:
             rows = connection.execute(
                 "SELECT sequence, trace_id, payload, record_sha256, "
                 "previous_sha256, entry_sha256 FROM decision_trace_journal ORDER BY sequence"
             ).fetchall()
 
-        previous = GENESIS
+        if not rows:
+            if start_sequence == 1 and previous_sha256 == GENESIS:
+                return TraceStoreVerificationReport(True, 0, 0)
+            return TraceStoreVerificationReport(False, 0, 0, "journal segment must not be empty")
+
+        previous = previous_sha256
         evidence_checked = 0
-        for expected, row in enumerate(rows, start=1):
+        for expected, row in enumerate(rows, start=start_sequence):
             if row["sequence"] != expected:
                 return TraceStoreVerificationReport(
-                    False, expected - 1, evidence_checked, "non-contiguous sequence"
+                    False, expected - start_sequence, evidence_checked, "non-contiguous sequence"
                 )
             if row["previous_sha256"] != previous:
                 return TraceStoreVerificationReport(
-                    False, expected - 1, evidence_checked, "previous-entry link mismatch"
+                    False, expected - start_sequence, evidence_checked, "previous-entry link mismatch"
                 )
             try:
                 trace = DecisionTrace.model_validate_json(row["payload"])
             except (ValueError, TypeError) as exc:
                 return TraceStoreVerificationReport(
-                    False, expected - 1, evidence_checked, f"invalid trace: {exc}"
+                    False, expected - start_sequence, evidence_checked, f"invalid trace: {exc}"
                 )
             if trace.trace_id != row["trace_id"]:
                 return TraceStoreVerificationReport(
-                    False, expected - 1, evidence_checked, "trace ID mismatch"
+                    False, expected - start_sequence, evidence_checked, "trace ID mismatch"
                 )
             if _trace_digest(trace) != trace.trace_sha256:
                 return TraceStoreVerificationReport(
-                    False, expected - 1, evidence_checked, "decision trace digest mismatch"
+                    False, expected - start_sequence, evidence_checked, "decision trace digest mismatch"
                 )
             record_hash = hashlib.sha256(row["payload"].encode("utf-8")).hexdigest()
             if record_hash != row["record_sha256"]:
                 return TraceStoreVerificationReport(
-                    False, expected - 1, evidence_checked, "record digest mismatch"
+                    False, expected - start_sequence, evidence_checked, "record digest mismatch"
                 )
             entry_hash = hashlib.sha256(
                 _canonical(
@@ -239,7 +269,7 @@ class SQLiteDecisionTraceStore:
             ).hexdigest()
             if entry_hash != row["entry_sha256"]:
                 return TraceStoreVerificationReport(
-                    False, expected - 1, evidence_checked, "entry digest mismatch"
+                    False, expected - start_sequence, evidence_checked, "entry digest mismatch"
                 )
             if evidence_store is not None:
                 report = verify_decision_trace(
@@ -249,14 +279,14 @@ class SQLiteDecisionTraceStore:
                 )
                 if not report.valid:
                     return TraceStoreVerificationReport(
-                        False, expected, evidence_checked + report.evidence_checked,
+                        False, expected - start_sequence + 1,
+                        evidence_checked + report.evidence_checked,
                         f"trace {trace.trace_id}: {report.error}",
                     )
                 evidence_checked += report.evidence_checked
             previous = entry_hash
 
         return TraceStoreVerificationReport(True, len(rows), evidence_checked)
-
     def replay(
         self,
         trace_id: str,
