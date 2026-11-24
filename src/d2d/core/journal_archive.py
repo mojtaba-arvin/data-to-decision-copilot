@@ -249,3 +249,70 @@ def verify_archive_manifest(
         )
     except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError, sqlite3.Error) as exc:
         return ArchiveManifestReport(valid=False, records_checked=0, error=str(exc))
+
+
+def restore_archive_snapshot(
+    database_path: str | Path,
+    manifest_path: str | Path,
+    destination: str | Path,
+    *,
+    journal_kind: JournalKind,
+    schema_version: int,
+    verify: Callable[[Path], VerificationResult],
+) -> ArchiveManifestReport:
+    """Restore a verified full snapshot to a new path without replacing existing data.
+
+    The destination must retain the snapshot filename because the v1 manifest binds
+    that filename. The source is never modified. A staged copy is re-verified before
+    an atomic hard-link publication, so an invalid or partial restore is never exposed.
+    """
+    source = Path(database_path).resolve()
+    manifest_file = Path(manifest_path).resolve()
+    target = Path(destination).resolve()
+    if source == target:
+        raise ValueError("restore destination must differ from the archive snapshot")
+    if target.name != source.name:
+        raise ValueError("restore destination must preserve the archive database filename")
+    if not source.is_file():
+        raise ValueError("archive database must be an existing regular file")
+    if target.exists():
+        raise FileExistsError(f"restore destination already exists: {target}")
+
+    source_report = verify_archive_manifest(
+        source,
+        manifest_file,
+        journal_kind=journal_kind,
+        schema_version=schema_version,
+        verify=verify,
+    )
+    if not source_report.valid:
+        raise ValueError(f"cannot restore an invalid archive: {source_report.error}")
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".d2d-restore-", dir=target.parent) as staging_dir:
+        staged = Path(staging_dir) / source.name
+        with source.open("rb") as reader, staged.open("xb") as writer:
+            while chunk := reader.read(1024 * 1024):
+                writer.write(chunk)
+            writer.flush()
+            os.fsync(writer.fileno())
+
+        staged_report = verify_archive_manifest(
+            staged,
+            manifest_file,
+            journal_kind=journal_kind,
+            schema_version=schema_version,
+            verify=verify,
+        )
+        if not staged_report.valid:
+            raise ValueError(f"staged archive verification failed: {staged_report.error}")
+
+        # link() publishes atomically and fails if another writer created target.
+        os.link(staged, target)
+        directory_fd = os.open(target.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+
+    return staged_report
