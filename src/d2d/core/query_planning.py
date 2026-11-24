@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from d2d.connectors.base import DataSource, SchemaSnapshot, TableSchema
 from d2d.core.evidence import create_execution_evidence
 from d2d.core.evidence_store import SQLiteEvidenceStore
-from d2d.core.sql_executor import DuckDBQueryExecutor, QueryResult
+from d2d.core.sql_executor import QueryResult
 from d2d.core.sql_guard import validate_read_only_sql
 
 _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -314,6 +314,18 @@ class QueryPlanningResult:
     prompt_sha256: str
 
 
+class QueryExecutor(Protocol):
+    """Execution boundary shared by in-process and supervised query engines."""
+
+    async def execute(
+        self,
+        sql: str,
+        parameters: list[object] | tuple[object, ...] | None = None,
+        *,
+        dialect: str = "duckdb",
+    ) -> QueryResult: ...
+
+
 class QueryPlanningRuntime:
     """Discover schema, plan, compile, execute, and persist execution evidence."""
 
@@ -322,7 +334,7 @@ class QueryPlanningRuntime:
         *,
         source_id: str,
         data_source: DataSource,
-        executor: DuckDBQueryExecutor,
+        executor: QueryExecutor,
         evidence_store: SQLiteEvidenceStore,
     ) -> None:
         if not source_id.strip():

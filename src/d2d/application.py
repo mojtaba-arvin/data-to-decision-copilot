@@ -9,9 +9,10 @@ from d2d.connectors.duckdb import DuckDBConnector
 from d2d.core.contracts import Confidence, Decision, DecisionClaim
 from d2d.core.decision_trace_store import SQLiteDecisionTraceStore
 from d2d.core.evidence_store import SQLiteEvidenceStore
+from d2d.core.isolated_query_executor import IsolatedDuckDBQueryExecutor
 from d2d.core.model_planning import ModelBackedQueryPlanner, ModelProviderIdentity
 from d2d.core.ollama_provider import OllamaStructuredPlanProvider
-from d2d.core.query_planning import QueryPlanner, QueryPlanningRuntime
+from d2d.core.query_planning import QueryExecutor, QueryPlanner, QueryPlanningRuntime
 from d2d.core.runtime import (
     DecisionPlan,
     DecisionPolicy,
@@ -30,7 +31,7 @@ class CopilotService:
         self,
         *,
         source: DataSource,
-        executor: DuckDBQueryExecutor,
+        executor: QueryExecutor,
         evidence_store: SQLiteEvidenceStore,
         planner: QueryPlanner,
         source_id: str,
@@ -206,6 +207,7 @@ def build_service(
     trace_path: str = "d2d-traces.sqlite",
     provider: str = "rules",
     model: str = "qwen3:8b",
+    isolated_worker: bool = False,
 ) -> CopilotService:
     """Build the same read-only query pipeline for every product interface."""
     source = DuckDBConnector(catalog_path)
@@ -225,7 +227,11 @@ def build_service(
     evidence_store = SQLiteEvidenceStore(evidence_path)
     return CopilotService(
         source=source,
-        executor=DuckDBQueryExecutor(catalog_path),
+        executor=(
+            IsolatedDuckDBQueryExecutor(catalog_path)
+            if isolated_worker
+            else DuckDBQueryExecutor(catalog_path)
+        ),
         evidence_store=evidence_store,
         planner=planner,
         source_id="analytics-catalog",
