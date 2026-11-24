@@ -26,6 +26,11 @@ def test_bilingual_corpus_is_versioned_and_explicitly_non_release():
         "supported", "contradicted", "unknown"
     }
     assert {case["split"] for case in cases} == {"train", "dev", "test"}
+    assert {
+        "negation", "quantifiers", "units", "percentage", "comparisons",
+        "temporal_scope", "aggregation", "missing_context",
+        "contradictory_source_rows",
+    }.issubset({case["category"] for case in cases})
     assert len({case["id"] for case in cases}) == len(cases)
 
 
