@@ -137,7 +137,7 @@ class IsolatedDuckDBQueryExecutor:
             rows_raw = response["rows"]
             if not isinstance(columns_raw, list) or not isinstance(rows_raw, list):
                 raise TypeError("columns and rows must be arrays")
-            columns = tuple(str(value) for value in columns_raw)
+            columns = tuple(str(value) for value in cast(list[Any], columns_raw))
             rows = tuple(tuple(row) for row in cast(list[list[Any]], rows_raw))
             captured_rows = int(response["captured_rows"])
             output_bytes = int(response["output_bytes"])
