@@ -55,10 +55,12 @@ def create_verified_backup(
     os.close(descriptor)
     temporary = Path(temporary_name)
     try:
-        with closing(sqlite3.connect(source)) as source_connection:
-            with closing(sqlite3.connect(temporary)) as backup_connection:
-                source_connection.backup(backup_connection)
-                backup_connection.commit()
+        with (
+            closing(sqlite3.connect(source)) as source_connection,
+            closing(sqlite3.connect(temporary)) as backup_connection,
+        ):
+            source_connection.backup(backup_connection)
+            backup_connection.commit()
 
         report = verify(temporary)
         if not report.valid:
