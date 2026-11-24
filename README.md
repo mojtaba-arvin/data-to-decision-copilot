@@ -2,7 +2,7 @@
 
 An open-source, read-only analytics copilot that turns natural-language questions into evidence-backed answers and explicit decision recommendations.
 
-> Status: active integration. The local core, semantic planning, evidence/decision journals, CLI, REST, MCP, and browser UI are implemented behind a read-only boundary. It is not yet production-ready for remote or untrusted workloads.
+> Status: functional local alpha. Query planning/execution, evidence journaling, explicit human-authored decision submission, DecisionTrace persistence/browsing, CLI, REST, MCP query tools, and browser UI are implemented. Remote access is TLS + shared bearer-token protected but has no per-user RBAC or tenant isolation. Untrusted workloads are not process-isolated. Do not treat this as a multi-tenant or autonomous decision system.
 
 ## Design principles
 - **Evidence before explanation:** every reported metric must trace to an executed query or a recorded deterministic calculation.
@@ -81,11 +81,13 @@ The REST API exposes `GET /health`, `GET /v1/schema`, `GET /v1/history`,
 returned by a prior query. The proposal must include a decision, at least one
 claim, an alternative with its trade-off, and a reversal condition. The server
 re-verifies the evidence journal and current schema, rejects truncated evidence,
-checks numeric grounding for claims marked as facts, applies a conservative
-policy (low/medium confidence only), and persists a DecisionTrace only when all
-gates pass. The endpoint does not generate recommendations from query rows or
-claim general natural-language entailment; proposal authors remain responsible
-for semantic correctness. This is an explicit human-in-the-loop decision path,
+checks literal-value grounding for claims marked as facts (including Persian and
+Arabic-Indic digits), detects a narrow class of direct conflicting fact claims,
+applies a conservative policy (low/medium confidence only), and persists a
+DecisionTrace only when all deterministic gates pass. These checks are not
+semantic entailment, calibrated confidence, unit reasoning, or general
+contradiction detection. The endpoint does not generate recommendations from
+query rows; proposal authors remain responsible for semantic correctness. This is an explicit human-in-the-loop decision path,
 not an autonomous decision agent.
 
 The REST API binds to loopback by default. Remote binds require TLS and a

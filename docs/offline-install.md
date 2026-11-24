@@ -82,8 +82,11 @@ Opt into the local Ollama provider explicitly:
 d2d query --catalog ./analytics.duckdb --provider ollama --model qwen3:8b --question "count rows in orders"
 ```
 
-Keep the REST API bound to loopback. The current product interface does not
-provide remote authentication or authorization.
+Keep the REST API bound to loopback unless a trusted single-tenant deployment
+has a TLS certificate/key and a high-entropy bearer token of at least 32
+characters. Remote mode currently uses one shared token: it has no per-user
+identity, RBAC, tenant isolation, or credential revocation. Do not expose it to
+untrusted users or networks.
 
 ## 5. Verify offline behavior
 

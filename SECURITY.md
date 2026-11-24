@@ -3,9 +3,11 @@
 ## Intended deployment
 
 Data-to-Decision Copilot is a local, read-only analytics tool. The REST server
-binds to loopback only. The MCP server uses stdio. Do not expose either interface
-to an untrusted network without adding authentication, authorization, transport
-security, request quotas, and tenant isolation.
+binds to loopback by default. Remote binds are gated by TLS and a 32+ character
+shared bearer token; this is not per-user authentication, RBAC, tenant isolation,
+or a substitute for a hardened reverse proxy. The MCP server uses stdio. Keep
+remote deployments single-tenant and trusted until identity, authorization,
+quotas, and tenant isolation are implemented.
 
 ## Trust boundaries
 
@@ -18,9 +20,11 @@ security, request quotas, and tenant isolation.
 - CSV/Parquet inputs must be explicitly listed under a configured root. Symlinks,
   path traversal, unsupported formats, per-file oversize inputs, and excessive
   aggregate input size are rejected.
-- Decision claims are typed as Fact, Inference, or Recommendation. Literal fact
-  grounding is a conservative value-match check, not a general proof of semantic
-  entailment. Human review remains necessary for consequential decisions.
+- Decision claims are typed as Fact, Inference, or Recommendation. Fact grounding
+  is a conservative scalar-literal match (including Persian/Arabic-Indic digit
+  normalization) plus narrow same-template conflict detection. It is not general
+  semantic entailment, calibrated confidence, unit conversion, or robust
+  contradiction detection. Human review remains necessary for consequential decisions.
 
 ## Operational limits
 
