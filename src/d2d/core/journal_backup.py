@@ -65,6 +65,13 @@ def create_verified_backup(
             source_connection.backup(backup_connection)
             backup_connection.commit()
 
+        # Make the completed SQLite image durable before it can be published.
+        file_descriptor = os.open(temporary, os.O_RDONLY)
+        try:
+            os.fsync(file_descriptor)
+        finally:
+            os.close(file_descriptor)
+
         report = verify(temporary)
         if not report.valid:
             raise ValueError(f"journal backup verification failed: {getattr(report, 'error', None)}")
@@ -85,6 +92,12 @@ def create_verified_backup(
 
         # A hard-link publication is atomic and fails rather than replacing a backup.
         os.link(temporary, target)
+        directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+        directory_descriptor = os.open(target.parent, directory_flags)
+        try:
+            os.fsync(directory_descriptor)
+        finally:
+            os.close(directory_descriptor)
         temporary.unlink()
         return JournalBackupReport(
             path=str(target),
