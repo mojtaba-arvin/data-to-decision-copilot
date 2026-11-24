@@ -122,6 +122,15 @@ def test_rest_api_serves_query_history_and_schema(catalog: Path, tmp_path: Path)
         with pytest.raises(HTTPError) as rejected:
             urlopen(rejected_request, timeout=5)
         assert rejected.value.code == 422
+        mismatched_body = json.loads(json.dumps(decision_body))
+        mismatched_body["question"] = "count rows in invoices"
+        mismatched_request = Request(
+            base + "/v1/decision", data=json.dumps(mismatched_body).encode(),
+            headers={"Content-Type": "application/json"}, method="POST",
+        )
+        with pytest.raises(HTTPError) as mismatched:
+            urlopen(mismatched_request, timeout=5)
+        assert mismatched.value.code == 422
         with pytest.raises(HTTPError) as missing_trace:
             urlopen(base + "/v1/traces/not-a-real-trace", timeout=5)
         assert missing_trace.value.code == 404
