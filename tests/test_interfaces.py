@@ -105,12 +105,12 @@ def test_mcp_stdio_exposes_only_query_and_schema_tools(catalog: Path, tmp_path: 
         service.close()
 
 
-def test_rest_server_refuses_non_loopback_bind(catalog: Path, tmp_path: Path) -> None:
+def test_rest_server_requires_auth_for_non_loopback_bind(catalog: Path, tmp_path: Path) -> None:
     service = build_service(
         catalog_path=str(catalog), evidence_path=str(tmp_path / "bind-evidence.sqlite")
     )
     try:
-        with pytest.raises(ValueError, match="loopback"):
+        with pytest.raises(ValueError, match="bearer token.*TLS"):
             create_server(service, host="0.0.0.0")
         with pytest.raises(ValueError, match="max_concurrent_queries"):
             create_server(service, max_concurrent_queries=0)
