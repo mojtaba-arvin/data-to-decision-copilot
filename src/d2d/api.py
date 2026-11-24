@@ -9,6 +9,7 @@ import ssl
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import BoundedSemaphore
 from typing import cast
+from urllib.parse import unquote
 
 from d2d.application import CopilotService
 
@@ -71,6 +72,25 @@ def create_server(
                 self._send(200, service.schema())
             elif self.path == "/v1/history":
                 self._send(200, {"items": service.history()})
+            elif self.path == "/v1/traces":
+                try:
+                    self._send(200, {"items": service.traces()})
+                except ValueError:
+                    self._send(503, {"error": "trace_verification_failed"})
+            elif self.path.startswith("/v1/traces/"):
+                trace_id = unquote(self.path.removeprefix("/v1/traces/"))
+                if not trace_id or "/" in trace_id:
+                    self._send(400, {"error": "invalid_trace_id"})
+                    return
+                try:
+                    trace = service.trace(trace_id)
+                except ValueError:
+                    self._send(503, {"error": "trace_verification_failed"})
+                    return
+                if trace is None:
+                    self._send(404, {"error": "trace_not_found"})
+                else:
+                    self._send(200, trace)
             else:
                 self._send(404, {"error": "not_found"})
 

@@ -70,6 +70,12 @@ def test_rest_api_serves_query_history_and_schema(catalog: Path, tmp_path: Path)
         with urlopen(base + "/v1/schema", timeout=5) as response:
             schema = json.loads(response.read())
         assert schema["tables"][0]["name"] == "orders"
+        with urlopen(base + "/v1/traces", timeout=5) as response:
+            traces = json.loads(response.read())
+        assert traces["items"] == []
+        with pytest.raises(HTTPError) as missing_trace:
+            urlopen(base + "/v1/traces/not-a-real-trace", timeout=5)
+        assert missing_trace.value.code == 404
     finally:
         server.shutdown()
         server.server_close()
