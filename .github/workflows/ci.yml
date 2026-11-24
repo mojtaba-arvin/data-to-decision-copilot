@@ -116,11 +116,11 @@ jobs:
           cat /tmp/ollama.log
           exit 1
       - name: Pull local model
-        run: ollama pull qwen3:1.7b
+        run: ollama pull qwen2.5:3b
       - name: Install project
         run: uv sync --locked --all-groups
       - name: Real model to guarded query smoke
         env:
-          D2D_OLLAMA_MODEL: qwen3:1.7b
+          D2D_OLLAMA_MODEL: qwen2.5:3b
         run: uv run --locked python scripts/ollama_smoke.py
 
