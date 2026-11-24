@@ -143,7 +143,7 @@ def create_server(
                             not isinstance(evidence_id, str)
                             or not isinstance(decision, dict)
                             or not isinstance(claims, list)
-                            or not all(isinstance(item, dict) for item in claims)
+                            or not all(isinstance(item, dict) for item in cast(list[object], claims))
                         ):
                             self._send(400, {"error": "invalid_decision_proposal_shape"})
                             return
