@@ -49,9 +49,19 @@ def _number_key(value: object) -> str | None:
     return format(number, "f")
 
 
+_DIGIT_TRANSLATION = str.maketrans(
+    "۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789"
+)
+
+
+def _normalize_digits(value: str) -> str:
+    """Normalize Persian and Arabic-Indic digits before deterministic checks."""
+    return value.translate(_DIGIT_TRANSLATION)
+
+
 def _numbers_in_text(value: str) -> set[str]:
     numbers: set[str] = set()
-    for match in _NUMBER.findall(value):
+    for match in _NUMBER.findall(_normalize_digits(value)):
         token = match.rstrip("%").replace(",", "")
         try:
             numbers.add(format(Decimal(token).normalize(), "f"))
@@ -77,7 +87,7 @@ def _fact_consistency_signature(statement: str) -> tuple[str, str | None, bool] 
     numbers = _numbers_in_text(statement)
     if len(numbers) > 1:
         return None
-    normalized = _NUMBER.sub(" value ", statement.casefold())
+    normalized = _NUMBER.sub(" value ", _normalize_digits(statement).casefold())
     negated = _NEGATION.search(normalized) is not None
     normalized = _NEGATION.sub(" ", normalized)
     skeleton = " ".join(re.findall(r"\w+", normalized))
