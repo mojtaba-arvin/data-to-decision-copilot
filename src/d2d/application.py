@@ -31,7 +31,7 @@ class CopilotService:
         self,
         *,
         source: DataSource,
-        executor: DuckDBQueryExecutor,
+        executor: QueryExecutor,
         evidence_store: SQLiteEvidenceStore,
         planner: QueryPlanner,
         source_id: str,
