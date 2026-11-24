@@ -62,12 +62,12 @@ def _sha256_file(path: Path) -> str:
 
 
 def _digest(value: object, field: str) -> str:
-    if not isinstance(value, str) or len(value) != 64:
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(character not in "0123456789abcdef" for character in value)
+    ):
         raise ValueError(f"invalid {field}")
-    try:
-        int(value, 16)
-    except ValueError as exc:
-        raise ValueError(f"invalid {field}") from exc
     return value
 
 
@@ -156,9 +156,16 @@ def verify_archive_chain(
                 raise ValueError(f"segment {index}: cross-segment entry hash mismatch")
             if previous_manifest != expected_manifest:
                 raise ValueError(f"segment {index}: previous manifest link mismatch")
-            if document["database_bytes"] != database.stat().st_size:
+            database_bytes = document["database_bytes"]
+            if (
+                not isinstance(database_bytes, int)
+                or isinstance(database_bytes, bool)
+                or database_bytes < 1
+                or database_bytes != database.stat().st_size
+            ):
                 raise ValueError(f"segment {index}: database size mismatch")
-            if document["database_sha256"] != _sha256_file(database):
+            database_digest = _digest(document["database_sha256"], "database digest")
+            if database_digest != _sha256_file(database):
                 raise ValueError(f"segment {index}: database digest mismatch")
 
             report = verify_segment(database, first, first_previous)
