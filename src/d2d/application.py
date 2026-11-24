@@ -18,8 +18,8 @@ from d2d.core.runtime import (
     DecisionRuntime,
     DeterministicPlanner,
 )
-from d2d.core.semantic_planning import RuleBasedSemanticPlanner
 from d2d.core.isolated_query_executor import IsolatedDuckDBQueryExecutor
+from d2d.core.semantic_planning import RuleBasedSemanticPlanner
 from d2d.core.sql_executor import DuckDBQueryExecutor
 from d2d.query_history import QueryHistoryItem, SQLiteQueryHistoryStore
 
