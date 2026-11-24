@@ -58,3 +58,14 @@ main-database file size after the measured query loop. It does not imply a
 retention or compaction policy: both journals remain append-only, and safe
 compaction still requires a verifiable checkpoint and backup design. WAL
 sidecars are not included in this size.
+
+
+## Verified journal backups (E9 groundwork)
+
+Evidence and DecisionTrace journals support consistent SQLite online backups.
+A backup is accepted only after the source journal verifies, is copied through
+SQLite's backup API, and the copy independently verifies. Publication is atomic
+and refuses to overwrite an existing backup. The report records the backup
+SHA-256, byte size, record count, and chain-head hash. This does not delete,
+compact, or expire journal entries; retention remains intentionally disabled
+until an explicit audit-retention policy and restore/anchor procedure are approved.
