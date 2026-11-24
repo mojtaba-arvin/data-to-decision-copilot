@@ -14,7 +14,7 @@ from collections.abc import Callable
 from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, cast
 from urllib.parse import quote
 
 JournalKind = Literal["evidence", "decision_trace"]
@@ -210,8 +210,11 @@ def verify_archive_manifest(
         database = Path(database_path).resolve()
         manifest_file = Path(manifest_path).resolve()
         raw = manifest_file.read_bytes()
-        document = json.loads(raw)
-        if not isinstance(document, dict) or set(document) != _MANIFEST_FIELDS:
+        parsed = json.loads(raw)
+        if not isinstance(parsed, dict):
+            raise ValueError("archive manifest must be a JSON object")
+        document = cast(dict[str, Any], parsed)
+        if set(document) != _MANIFEST_FIELDS:
             raise ValueError("archive manifest fields do not match format version 1")
         if raw.rstrip(b"\n") != _canonical(document):
             raise ValueError("archive manifest is not canonical JSON")
