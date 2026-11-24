@@ -8,10 +8,13 @@ from d2d.connectors.base import DataSource
 from d2d.connectors.duckdb import DuckDBConnector
 from d2d.core.contracts import Confidence, Decision, DecisionClaim
 from d2d.core.decision_trace_store import SQLiteDecisionTraceStore
-from d2d.core.runtime import (
-    DecisionPlan, DecisionPolicy, DecisionRuntime, DeterministicPlanner,
-)
 from d2d.core.evidence_store import SQLiteEvidenceStore
+from d2d.core.runtime import (
+    DecisionPlan,
+    DecisionPolicy,
+    DecisionRuntime,
+    DeterministicPlanner,
+)
 from d2d.core.model_planning import ModelBackedQueryPlanner, ModelProviderIdentity
 from d2d.core.ollama_provider import OllamaStructuredPlanProvider
 from d2d.core.query_planning import QueryPlanner, QueryPlanningRuntime
