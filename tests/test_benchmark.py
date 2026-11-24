@@ -54,17 +54,26 @@ def test_persian_english_semantic_benchmark_exact_plan_accuracy(tmp_path: Path) 
 
 
 
-def test_peak_rss_reports_non_negative_bytes_or_unavailable() -> None:
-    from benchmarks.run_benchmark import peak_rss_bytes
+def _load_benchmark_module():
+    import importlib.util
 
-    value = peak_rss_bytes()
+    benchmark_path = Path(__file__).parents[1] / "benchmarks" / "run_benchmark.py"
+    spec = importlib.util.spec_from_file_location("d2d_run_benchmark", benchmark_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_peak_rss_reports_non_negative_bytes_or_unavailable() -> None:
+    value = _load_benchmark_module().peak_rss_bytes()
     assert value is None or value >= 0
 
 
 def test_sqlite_journal_metrics_reports_records_and_file_size(tmp_path: Path) -> None:
     import sqlite3
 
-    from benchmarks.run_benchmark import sqlite_journal_metrics
+    sqlite_journal_metrics = _load_benchmark_module().sqlite_journal_metrics
 
     database = tmp_path / "evidence.sqlite"
     with sqlite3.connect(database) as connection:
