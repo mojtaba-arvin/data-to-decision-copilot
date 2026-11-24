@@ -38,6 +38,7 @@ class CopilotService:
         trace_store: SQLiteDecisionTraceStore,
     ) -> None:
         self._source = source
+        self._source_id = source_id
         self._history_store = history_store
         self._evidence_store = evidence_store
         self._trace_store = trace_store
@@ -123,7 +124,7 @@ class CopilotService:
             evidence_ids=(evidence_id,),
             planner=DeterministicPlanner(plan_template=plan),
             expected_schema_fingerprints={
-                "analytics-catalog": self._source.snapshot().fingerprint,
+                self._source_id: self._source.snapshot().fingerprint,
             },
         )
         return {
