@@ -5,7 +5,6 @@ import json
 import sqlite3
 from pathlib import Path
 
-import pytest
 
 from d2d.core.journal_chain import GENESIS, _canonical, verify_archive_chain
 
