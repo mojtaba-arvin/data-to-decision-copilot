@@ -1,0 +1,253 @@
+{
+  "dataset_id": "d2d-bilingual-evidence-entailment",
+  "version": "1.0.0",
+  "status": "development_fixture",
+  "review_status": "not_human_reviewed",
+  "release_eligible": false,
+  "label_set": [
+    "supported",
+    "contradicted",
+    "unknown"
+  ],
+  "splits": {
+    "train": "development only",
+    "dev": "development only",
+    "test": "development only; not a release gate"
+  },
+  "cases": [
+    {
+      "id": "en-sup-001",
+      "language": "en",
+      "category": "numeric_literal",
+      "split": "train",
+      "premise": "The report records 42 units in stock.",
+      "hypothesis": "The report records 42 units in stock.",
+      "gold_label": "supported"
+    },
+    {
+      "id": "en-con-001",
+      "language": "en",
+      "category": "numeric_literal",
+      "split": "train",
+      "premise": "The report records 42 units in stock.",
+      "hypothesis": "The report records 24 units in stock.",
+      "gold_label": "contradicted"
+    },
+    {
+      "id": "en-unk-001",
+      "language": "en",
+      "category": "missing_context",
+      "split": "train",
+      "premise": "The report records 42 units in stock.",
+      "hypothesis": "The stock level is sufficient for next month's demand.",
+      "gold_label": "unknown"
+    },
+    {
+      "id": "en-sup-002",
+      "language": "en",
+      "category": "negation",
+      "split": "dev",
+      "premise": "The shipment was not delivered on Tuesday.",
+      "hypothesis": "The shipment was not delivered on Tuesday.",
+      "gold_label": "supported"
+    },
+    {
+      "id": "en-con-002",
+      "language": "en",
+      "category": "negation",
+      "split": "dev",
+      "premise": "The shipment was not delivered on Tuesday.",
+      "hypothesis": "The shipment was delivered on Tuesday.",
+      "gold_label": "contradicted"
+    },
+    {
+      "id": "en-unk-002",
+      "language": "en",
+      "category": "temporal_scope",
+      "split": "dev",
+      "premise": "Revenue increased in March.",
+      "hypothesis": "Revenue will increase in April.",
+      "gold_label": "unknown"
+    },
+    {
+      "id": "en-sup-003",
+      "language": "en",
+      "category": "percentage",
+      "split": "test",
+      "premise": "The error rate fell from 5% to 2%.",
+      "hypothesis": "The error rate fell from 5% to 2%.",
+      "gold_label": "supported"
+    },
+    {
+      "id": "en-con-003",
+      "language": "en",
+      "category": "percentage",
+      "split": "test",
+      "premise": "The error rate fell from 5% to 2%.",
+      "hypothesis": "The error rate rose from 2% to 5%.",
+      "gold_label": "contradicted"
+    },
+    {
+      "id": "en-unk-003",
+      "language": "en",
+      "category": "aggregation",
+      "split": "test",
+      "premise": "The average order value was 18 dollars.",
+      "hypothesis": "Every order was worth 18 dollars.",
+      "gold_label": "unknown"
+    },
+    {
+      "id": "fa-sup-001",
+      "language": "fa",
+      "category": "numeric_literal",
+      "split": "train",
+      "premise": "موجودی گزارش‌شده ۴۲ واحد است.",
+      "hypothesis": "موجودی گزارش‌شده ۴۲ واحد است.",
+      "gold_label": "supported"
+    },
+    {
+      "id": "fa-con-001",
+      "language": "fa",
+      "category": "numeric_literal",
+      "split": "train",
+      "premise": "موجودی گزارش‌شده ۴۲ واحد است.",
+      "hypothesis": "موجودی گزارش‌شده ۲۴ واحد است.",
+      "gold_label": "contradicted"
+    },
+    {
+      "id": "fa-unk-001",
+      "language": "fa",
+      "category": "missing_context",
+      "split": "train",
+      "premise": "موجودی گزارش‌شده ۴۲ واحد است.",
+      "hypothesis": "این موجودی برای تقاضای ماه آینده کافی است.",
+      "gold_label": "unknown"
+    },
+    {
+      "id": "fa-sup-002",
+      "language": "fa",
+      "category": "negation",
+      "split": "dev",
+      "premise": "سفارش روز سه‌شنبه ارسال نشد.",
+      "hypothesis": "سفارش روز سه‌شنبه ارسال نشد.",
+      "gold_label": "supported"
+    },
+    {
+      "id": "fa-con-002",
+      "language": "fa",
+      "category": "negation",
+      "split": "dev",
+      "premise": "سفارش روز سه‌شنبه ارسال نشد.",
+      "hypothesis": "سفارش روز سه‌شنبه ارسال شد.",
+      "gold_label": "contradicted"
+    },
+    {
+      "id": "fa-unk-002",
+      "language": "fa",
+      "category": "temporal_scope",
+      "split": "dev",
+      "premise": "در ماه مارس درآمد افزایش یافت.",
+      "hypothesis": "در ماه آوریل نیز درآمد افزایش خواهد یافت.",
+      "gold_label": "unknown"
+    },
+    {
+      "id": "fa-sup-003",
+      "language": "fa",
+      "category": "percentage",
+      "split": "test",
+      "premise": "نرخ خطا از ۵٪ به ۲٪ کاهش یافت.",
+      "hypothesis": "نرخ خطا از ۵٪ به ۲٪ کاهش یافت.",
+      "gold_label": "supported"
+    },
+    {
+      "id": "fa-con-003",
+      "language": "fa",
+      "category": "percentage",
+      "split": "test",
+      "premise": "نرخ خطا از ۵٪ به ۲٪ کاهش یافت.",
+      "hypothesis": "نرخ خطا از ۲٪ به ۵٪ افزایش یافت.",
+      "gold_label": "contradicted"
+    },
+    {
+      "id": "fa-unk-003",
+      "language": "fa",
+      "category": "aggregation",
+      "split": "test",
+      "premise": "میانگین ارزش سفارش ۱۸ دلار بود.",
+      "hypothesis": "ارزش تمام سفارش‌ها ۱۸ دلار بود.",
+      "gold_label": "unknown"
+    },
+    {
+      "id": "en-sup-004",
+      "language": "en",
+      "category": "quantifiers",
+      "split": "train",
+      "premise": "All five invoices were approved.",
+      "hypothesis": "Every one of the five invoices was approved.",
+      "gold_label": "supported"
+    },
+    {
+      "id": "en-con-004",
+      "language": "en",
+      "category": "units",
+      "split": "dev",
+      "premise": "The recorded distance is 12 kilometers.",
+      "hypothesis": "The recorded distance is 12 miles.",
+      "gold_label": "contradicted"
+    },
+    {
+      "id": "en-unk-004",
+      "language": "en",
+      "category": "comparisons",
+      "split": "test",
+      "premise": "Product A sold 12 units and product B sold 10 units.",
+      "hypothesis": "Product A generated more profit than product B.",
+      "gold_label": "unknown"
+    },
+    {
+      "id": "en-unk-005",
+      "language": "en",
+      "category": "contradictory_source_rows",
+      "split": "test",
+      "premise": "Source A reports revenue of 100; source B reports revenue of 120 for the same period.",
+      "hypothesis": "Revenue for the period was exactly 100.",
+      "gold_label": "unknown"
+    },
+    {
+      "id": "fa-sup-004",
+      "language": "fa",
+      "category": "quantifiers",
+      "split": "train",
+      "premise": "هر پنج فاکتور تأیید شدند.",
+      "hypothesis": "تمام پنج فاکتور تأیید شدند.",
+      "gold_label": "supported"
+    },
+    {
+      "id": "fa-con-004",
+      "language": "fa",
+      "category": "units",
+      "split": "dev",
+      "premise": "فاصله ثبت‌شده ۱۲ کیلومتر است.",
+      "hypothesis": "فاصله ثبت‌شده ۱۲ مایل است.",
+      "gold_label": "contradicted"
+    },
+    {
+      "id": "fa-unk-004",
+      "language": "fa",
+      "category": "comparisons",
+      "split": "test",
+      "premise": "محصول الف ۱۲ واحد و محصول ب ۱۰ واحد فروخت.",
+      "hypothesis": "سود محصول الف از محصول ب بیشتر بود.",
+      "gold_label": "unknown"
+    },
+    {
+      "id": "fa-unk-005",
+      "language": "fa",
+      "category": "contradictory_source_rows",
+      "split": "test",
+      "premise": "منبع الف درآمد را ۱۰۰ و منبع ب برای همان دوره ۱۲۰ گزارش می‌کند.",
+      "hypothesis": "درآمد آن دوره دقیقاً ۱۰۰ بود.",
+      "gold_label": "unknown"
+    }
+  ]
+}
