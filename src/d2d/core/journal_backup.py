@@ -13,8 +13,11 @@ from typing import Protocol
 
 
 class VerificationResult(Protocol):
-    valid: bool
-    records_checked: int
+    @property
+    def valid(self) -> bool: ...
+
+    @property
+    def records_checked(self) -> int: ...
 
 
 @dataclass(frozen=True, slots=True)
