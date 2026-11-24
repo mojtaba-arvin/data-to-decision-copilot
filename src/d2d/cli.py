@@ -22,6 +22,10 @@ def _parser() -> argparse.ArgumentParser:
         command.add_argument("--history-db", default="d2d-history.sqlite")
         command.add_argument("--provider", choices=("rules", "ollama"), default="rules")
         command.add_argument("--model", default="qwen3:8b")
+        command.add_argument(
+            "--isolated-worker", action="store_true",
+            help="Execute each DuckDB query in a resource-limited child process (POSIX only)",
+        )
         if name == "query":
             command.add_argument("--question", required=True)
         if name == "serve":
