@@ -33,7 +33,7 @@ def main() -> None:
         try:
             planner = ModelBackedQueryPlanner(
                 provider=OllamaStructuredPlanProvider(
-                    model=model, timeout_seconds=180, max_output_tokens=512,
+                    model=model, timeout_seconds=120, max_output_tokens=512,
                 ),
                 provider_identity=ModelProviderIdentity(
                     provider="ollama", model=model, revision=f"ci-smoke-{model}",
