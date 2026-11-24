@@ -176,6 +176,78 @@
       "premise": "میانگین ارزش سفارش ۱۸ دلار بود.",
       "hypothesis": "ارزش تمام سفارش‌ها ۱۸ دلار بود.",
       "gold_label": "unknown"
+    },
+    {
+      "id": "en-sup-004",
+      "language": "en",
+      "category": "quantifiers",
+      "split": "train",
+      "premise": "All five invoices were approved.",
+      "hypothesis": "Every one of the five invoices was approved.",
+      "gold_label": "supported"
+    },
+    {
+      "id": "en-con-004",
+      "language": "en",
+      "category": "units",
+      "split": "dev",
+      "premise": "The recorded distance is 12 kilometers.",
+      "hypothesis": "The recorded distance is 12 miles.",
+      "gold_label": "contradicted"
+    },
+    {
+      "id": "en-unk-004",
+      "language": "en",
+      "category": "comparisons",
+      "split": "test",
+      "premise": "Product A sold 12 units and product B sold 10 units.",
+      "hypothesis": "Product A generated more profit than product B.",
+      "gold_label": "unknown"
+    },
+    {
+      "id": "en-unk-005",
+      "language": "en",
+      "category": "contradictory_source_rows",
+      "split": "test",
+      "premise": "Source A reports revenue of 100; source B reports revenue of 120 for the same period.",
+      "hypothesis": "Revenue for the period was exactly 100.",
+      "gold_label": "unknown"
+    },
+    {
+      "id": "fa-sup-004",
+      "language": "fa",
+      "category": "quantifiers",
+      "split": "train",
+      "premise": "هر پنج فاکتور تأیید شدند.",
+      "hypothesis": "تمام پنج فاکتور تأیید شدند.",
+      "gold_label": "supported"
+    },
+    {
+      "id": "fa-con-004",
+      "language": "fa",
+      "category": "units",
+      "split": "dev",
+      "premise": "فاصله ثبت‌شده ۱۲ کیلومتر است.",
+      "hypothesis": "فاصله ثبت‌شده ۱۲ مایل است.",
+      "gold_label": "contradicted"
+    },
+    {
+      "id": "fa-unk-004",
+      "language": "fa",
+      "category": "comparisons",
+      "split": "test",
+      "premise": "محصول الف ۱۲ واحد و محصول ب ۱۰ واحد فروخت.",
+      "hypothesis": "سود محصول الف از محصول ب بیشتر بود.",
+      "gold_label": "unknown"
+    },
+    {
+      "id": "fa-unk-005",
+      "language": "fa",
+      "category": "contradictory_source_rows",
+      "split": "test",
+      "premise": "منبع الف درآمد را ۱۰۰ و منبع ب برای همان دوره ۱۲۰ گزارش می‌کند.",
+      "hypothesis": "درآمد آن دوره دقیقاً ۱۰۰ بود.",
+      "gold_label": "unknown"
     }
   ]
 }
