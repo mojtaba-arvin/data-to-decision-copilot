@@ -444,20 +444,13 @@ def test_restores_real_evidence_store_segments_and_reopens_as_genesis_journal(
         previous_manifest=first_manifest_hash,
     )
 
-    def verify_real_segment(path: Path, first: int, previous: str):
-        trusted = None if first == 1 else (first - 1, previous)
-        store = SQLiteEvidenceStore(path, trusted_checkpoint=trusted)
-        return store.verify_segment(
-            start_sequence=first, previous_sha256=previous
-        )
-
     destination = tmp_path / "restored-real-evidence.sqlite"
     report = restore_archive_chain(
         [(first_database, first_manifest), (second_database, second_manifest)],
         destination,
         journal_kind="evidence",
         schema_version=1,
-        verify_segment=verify_real_segment,
+        verify_segment=segment_verifier,
     )
 
     assert report.records_restored == 4
