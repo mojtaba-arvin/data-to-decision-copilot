@@ -152,8 +152,13 @@ def verify_archive_chain(
                 not isinstance(first, int) or isinstance(first, bool)
                 or not isinstance(last, int) or isinstance(last, bool)
                 or not isinstance(records, int) or isinstance(records, bool)
-                or first < 1 or last < first or records != last - first + 1
             ):
+                raise ValueError(f"segment {index}: invalid sequence range")
+            empty_genesis = first == 1 and last == 0 and records == 0
+            nonempty_range = (
+                first >= 1 and last >= first and records == last - first + 1
+            )
+            if not empty_genesis and not nonempty_range:
                 raise ValueError(f"segment {index}: invalid sequence range")
 
             first_previous = _digest(document["first_previous_sha256"], "first predecessor hash")
@@ -168,10 +173,21 @@ def verify_archive_chain(
             if claimed_manifest != actual_manifest:
                 raise ValueError(f"segment {index}: manifest digest mismatch")
 
-            if first != expected_sequence:
-                raise ValueError(f"segment {index}: sequence gap, overlap, or reordered segment")
-            if first_previous != expected_previous:
-                raise ValueError(f"segment {index}: cross-segment entry hash mismatch")
+            if empty_genesis:
+                if (
+                    len(segments) != 1
+                    or first_previous != GENESIS
+                    or first_entry != GENESIS
+                    or last_entry != GENESIS
+                ):
+                    raise ValueError("an empty journal must be a single genesis segment")
+            else:
+                if first != expected_sequence:
+                    raise ValueError(
+                        f"segment {index}: sequence gap, overlap, or reordered segment"
+                    )
+                if first_previous != expected_previous:
+                    raise ValueError(f"segment {index}: cross-segment entry hash mismatch")
             if previous_manifest != expected_manifest:
                 raise ValueError(f"segment {index}: previous manifest link mismatch")
             database_bytes = document["database_bytes"]
@@ -200,10 +216,20 @@ def verify_archive_chain(
                     f"MIN(CASE WHEN sequence = ? THEN entry_sha256 END) FROM {table}",
                     (first, last),
                 ).fetchone()
-            if bounds is None or bounds[0] != first or bounds[1] != last:
-                raise ValueError(f"segment {index}: database sequence bounds mismatch")
-            if bounds[2] != first_entry or bounds[3] != last_entry:
-                raise ValueError(f"segment {index}: database boundary hash mismatch")
+            if empty_genesis:
+                if (
+                    bounds is None
+                    or bounds[0] is not None
+                    or bounds[1] is not None
+                    or first_entry != GENESIS
+                    or last_entry != GENESIS
+                ):
+                    raise ValueError(f"segment {index}: empty database bounds mismatch")
+            else:
+                if bounds is None or bounds[0] != first or bounds[1] != last:
+                    raise ValueError(f"segment {index}: database sequence bounds mismatch")
+                if bounds[2] != first_entry or bounds[3] != last_entry:
+                    raise ValueError(f"segment {index}: database boundary hash mismatch")
             _verify_segment_checkpoint(
                 database,
                 journal_kind=journal_kind,
