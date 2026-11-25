@@ -433,3 +433,200 @@ def test_restores_real_decision_trace_chain_and_replays_against_evidence(
             evidence_store=evidence_store,
             expected_schema_fingerprints={"warehouse": "a" * 64},
         ) == trace
+
+
+
+def _write_evidence_segment_manifest(
+    database: Path,
+    manifest: Path,
+    *,
+    segment_id: str,
+    previous_entry: str,
+    previous_manifest: str,
+) -> tuple[str, str]:
+    with sqlite3.connect(database) as connection:
+        rows = connection.execute(
+            "SELECT sequence, previous_sha256, entry_sha256 "
+            "FROM evidence_journal ORDER BY sequence"
+        ).fetchall()
+    payload = {
+        "format_version": 2,
+        "journal_kind": "evidence",
+        "database_file": database.name,
+        "schema_version": 1,
+        "segment_id": segment_id,
+        "first_sequence": int(rows[0][0]),
+        "last_sequence": int(rows[-1][0]),
+        "records": len(rows),
+        "first_previous_sha256": previous_entry,
+        "first_entry_sha256": str(rows[0][2]),
+        "last_entry_sha256": str(rows[-1][2]),
+        "previous_manifest_sha256": previous_manifest,
+        "database_bytes": database.stat().st_size,
+        "database_sha256": hashlib.sha256(database.read_bytes()).hexdigest(),
+    }
+    canonical = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    digest = hashlib.sha256(canonical).hexdigest()
+    manifest.write_bytes(
+        json.dumps(
+            {**payload, "manifest_sha256": digest},
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+        + b"\n"
+    )
+    return digest, str(rows[-1][2])
+
+
+def test_restores_paired_journals_and_replays_traces_against_restored_evidence(
+    tmp_path: Path,
+):
+    archive = tmp_path / "paired-archive"
+    evidence_archive = archive / "evidence"
+    trace_archive = archive / "traces"
+    evidence_archive.mkdir(parents=True)
+    trace_archive.mkdir(parents=True)
+
+    first_evidence = SQLiteEvidenceStore(tmp_path / "first-evidence.sqlite")
+    first_traces = SQLiteDecisionTraceStore(tmp_path / "first-traces.sqlite")
+    first_trace_records = [make_trace(first_evidence, value) for value in (11, 12)]
+    for trace in first_trace_records:
+        first_traces.append(trace)
+    first_evidence.initialize_checkpoint_metadata()
+    first_traces.initialize_checkpoint_metadata()
+
+    evidence_one = evidence_archive / "segment-1.sqlite"
+    first_evidence.backup(evidence_one)
+    evidence_one_manifest = evidence_archive / "segment-1.manifest.json"
+    evidence_one_digest, evidence_one_head = _write_evidence_segment_manifest(
+        evidence_one,
+        evidence_one_manifest,
+        segment_id="paired-evidence-1",
+        previous_entry=GENESIS,
+        previous_manifest=GENESIS,
+    )
+    trace_one = trace_archive / "segment-1.sqlite"
+    first_traces.backup(trace_one)
+    trace_one_manifest = trace_archive / "segment-1.manifest.json"
+    trace_one_digest, trace_one_head = _write_trace_segment_manifest(
+        trace_one,
+        trace_one_manifest,
+        segment_id="paired-traces-1",
+        previous_entry=GENESIS,
+        previous_manifest=GENESIS,
+    )
+
+    second_evidence_path = tmp_path / "second-evidence.sqlite"
+    SQLiteEvidenceStore(second_evidence_path)
+    with sqlite3.connect(second_evidence_path) as connection:
+        connection.executemany(
+            "INSERT INTO journal_meta(key, value) VALUES (?, ?)",
+            [
+                ("checkpoint_schema_version", "1"),
+                ("checkpoint_sequence", "2"),
+                ("checkpoint_sha256", evidence_one_head),
+            ],
+        )
+    second_evidence = SQLiteEvidenceStore(
+        second_evidence_path, trusted_checkpoint=(2, evidence_one_head)
+    )
+
+    second_trace_path = tmp_path / "second-traces.sqlite"
+    SQLiteDecisionTraceStore(second_trace_path)
+    with sqlite3.connect(second_trace_path) as connection:
+        connection.executemany(
+            "INSERT INTO trace_store_meta(key, value) VALUES (?, ?)",
+            [
+                ("checkpoint_schema_version", "1"),
+                ("checkpoint_sequence", "2"),
+                ("checkpoint_sha256", trace_one_head),
+            ],
+        )
+    second_traces = SQLiteDecisionTraceStore(
+        second_trace_path, trusted_checkpoint=(2, trace_one_head)
+    )
+    second_trace_records = [make_trace(second_evidence, value) for value in (13, 14)]
+    for trace in second_trace_records:
+        second_traces.append(trace)
+
+    evidence_two = evidence_archive / "segment-2.sqlite"
+    second_evidence.backup(evidence_two)
+    evidence_two_manifest = evidence_archive / "segment-2.manifest.json"
+    _write_evidence_segment_manifest(
+        evidence_two,
+        evidence_two_manifest,
+        segment_id="paired-evidence-2",
+        previous_entry=evidence_one_head,
+        previous_manifest=evidence_one_digest,
+    )
+    trace_two = trace_archive / "segment-2.sqlite"
+    second_traces.backup(trace_two)
+    trace_two_manifest = trace_archive / "segment-2.manifest.json"
+    _write_trace_segment_manifest(
+        trace_two,
+        trace_two_manifest,
+        segment_id="paired-traces-2",
+        previous_entry=trace_one_head,
+        previous_manifest=trace_one_digest,
+    )
+
+    def verify_evidence_segment(path: Path, start: int, previous: str):
+        store = SQLiteEvidenceStore(
+            path, trusted_checkpoint=(start - 1, previous)
+        )
+        return store.verify_segment(
+            start_sequence=start, previous_sha256=previous
+        )
+
+    def verify_trace_segment(path: Path, start: int, previous: str):
+        store = SQLiteDecisionTraceStore(
+            path, trusted_checkpoint=(start - 1, previous)
+        )
+        return store.verify_segment(
+            start_sequence=start, previous_sha256=previous
+        )
+
+    restored_directory = tmp_path / "restored-pair"
+    restored_directory.mkdir()
+    restored_evidence_path = restored_directory / "evidence.sqlite"
+    restored_trace_path = restored_directory / "traces.sqlite"
+    evidence_report = restore_archive_chain(
+        [(evidence_one, evidence_one_manifest), (evidence_two, evidence_two_manifest)],
+        restored_evidence_path,
+        journal_kind="evidence",
+        schema_version=1,
+        verify_segment=verify_evidence_segment,
+    )
+    trace_report = restore_archive_chain(
+        [(trace_one, trace_one_manifest), (trace_two, trace_two_manifest)],
+        restored_trace_path,
+        journal_kind="decision_trace",
+        schema_version=1,
+        verify_segment=verify_trace_segment,
+    )
+
+    restored_evidence = SQLiteEvidenceStore(restored_evidence_path)
+    restored_traces = SQLiteDecisionTraceStore(restored_trace_path)
+    assert evidence_report.records_restored == 4
+    assert trace_report.records_restored == 4
+    verification = restored_traces.verify(
+        evidence_store=restored_evidence,
+        expected_schema_fingerprints={"warehouse": "a" * 64},
+    )
+    assert verification.valid
+    assert verification.records_checked == 4
+    assert verification.evidence_checked == 4
+    for trace in first_trace_records + second_trace_records:
+        assert restored_traces.replay(
+            trace.trace_id,
+            evidence_store=restored_evidence,
+            expected_schema_fingerprints={"warehouse": "a" * 64},
+        ) == trace
