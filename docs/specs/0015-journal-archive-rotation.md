@@ -200,7 +200,7 @@ restore workflow and must be implemented before the release drill is complete.
 
 ## Operator paired backup/restore increment
 
-The operator workflow is being added as separate commands:
+The operator workflow is available as separate commands:
 `d2d journal backup --evidence-db PATH --trace-db PATH --output DIR` and
 `d2d journal restore --evidence-archive DIR --trace-archive DIR --output DIR`.
 Backup uses SQLite online snapshots and publishes both genesis-to-head archive
@@ -213,3 +213,16 @@ checkpoints, never truncates active journals, and does not advance checkpoint
 metadata. Catalogs, query history, config, secrets, and model artifacts are
 outside this paired-journal backup and need their own procedures. The manifests
 remain unsigned, so integrity does not imply producer authenticity.
+
+
+### Merged operator implementation (PR #64)
+
+The paired `journal backup` and `journal restore` CLI is now merged. The
+backup command takes online SQLite snapshots of both journals, writes canonical
+genesis manifests, validates cross-journal references, and publishes the backup
+directory atomically. Restore verifies both chains and publishes the restored
+pair atomically with no replacement. Empty genesis journals are supported.
+
+This closes the operator paired-journal backup/restore path, not the complete
+archive lifecycle. Rotation, checkpoint advancement, crash recovery, redundant
+copies, signatures, and retention remain disabled.
