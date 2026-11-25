@@ -6,7 +6,10 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from d2d.core.evidence import create_execution_evidence
+from d2d.core.evidence_store import SQLiteEvidenceStore
 from d2d.core.journal_chain import GENESIS, restore_archive_chain, verify_archive_chain
+from d2d.core.sql_executor import QueryResult
 
 
 def _canonical_for_test(value: Any) -> bytes:
@@ -341,3 +344,123 @@ def test_chain_rejects_checkpoint_that_disagrees_with_manifest_predecessor(
     )
     assert not report.valid
     assert "checkpoint does not match manifest predecessor" in (report.error or "")
+
+
+def _store_evidence(value: int):
+    return create_execution_evidence(
+        sql=f"SELECT {value} AS value",
+        dialect="duckdb",
+        result=QueryResult(
+            columns=("value",), rows=((value,),), captured_rows=1,
+            output_bytes=20, truncated=False,
+        ),
+        source_id="restore-test",
+        schema_fingerprint="a" * 64,
+        execution_ms=1.0,
+    )
+
+
+def _write_store_segment_manifest(
+    database: Path,
+    manifest: Path,
+    *,
+    segment_id: str,
+    previous_entry: str,
+    previous_manifest: str,
+) -> tuple[str, str]:
+    with sqlite3.connect(database) as connection:
+        rows = connection.execute(
+            "SELECT sequence, previous_sha256, entry_sha256 "
+            "FROM evidence_journal ORDER BY sequence"
+        ).fetchall()
+    payload: dict[str, Any] = {
+        "format_version": 2,
+        "journal_kind": "evidence",
+        "database_file": database.name,
+        "schema_version": 1,
+        "segment_id": segment_id,
+        "first_sequence": int(rows[0][0]),
+        "last_sequence": int(rows[-1][0]),
+        "records": len(rows),
+        "first_previous_sha256": previous_entry,
+        "first_entry_sha256": str(rows[0][2]),
+        "last_entry_sha256": str(rows[-1][2]),
+        "previous_manifest_sha256": previous_manifest,
+        "database_bytes": database.stat().st_size,
+        "database_sha256": hashlib.sha256(database.read_bytes()).hexdigest(),
+    }
+    digest = hashlib.sha256(_canonical_for_test(payload)).hexdigest()
+    manifest.write_bytes(
+        _canonical_for_test({**payload, "manifest_sha256": digest}) + b"\\n"
+    )
+    return digest, str(rows[-1][2])
+
+
+def test_restores_real_evidence_store_segments_and_reopens_as_genesis_journal(
+    tmp_path: Path,
+):
+    archive_directory = tmp_path / "archive"
+    archive_directory.mkdir()
+
+    first_live = SQLiteEvidenceStore(tmp_path / "first-live.sqlite")
+    first_live.append(_store_evidence(1))
+    first_live.append(_store_evidence(2))
+    first_live.initialize_checkpoint_metadata()
+    first_database = archive_directory / "segment-1.sqlite"
+    first_live.backup(first_database)
+    first_manifest = archive_directory / "segment-1.manifest.json"
+    first_manifest_hash, first_head = _write_store_segment_manifest(
+        first_database,
+        first_manifest,
+        segment_id="real-evidence-1",
+        previous_entry=GENESIS,
+        previous_manifest=GENESIS,
+    )
+
+    second_live_path = tmp_path / "second-live.sqlite"
+    second_live = SQLiteEvidenceStore(second_live_path)
+    with sqlite3.connect(second_live_path) as connection:
+        connection.executemany(
+            "INSERT INTO journal_meta(key, value) VALUES (?, ?)",
+            [
+                ("checkpoint_schema_version", "1"),
+                ("checkpoint_sequence", "2"),
+                ("checkpoint_sha256", first_head),
+            ],
+        )
+    second_live = SQLiteEvidenceStore(
+        second_live_path, trusted_checkpoint=(2, first_head)
+    )
+    second_live.append(_store_evidence(3))
+    second_live.append(_store_evidence(4))
+    second_database = archive_directory / "segment-2.sqlite"
+    second_live.backup(second_database)
+    second_manifest = archive_directory / "segment-2.manifest.json"
+    _write_store_segment_manifest(
+        second_database,
+        second_manifest,
+        segment_id="real-evidence-2",
+        previous_entry=first_head,
+        previous_manifest=first_manifest_hash,
+    )
+
+    def verify_real_segment(path: Path, first: int, previous: str):
+        trusted = None if first == 1 else (first - 1, previous)
+        store = SQLiteEvidenceStore(path, trusted_checkpoint=trusted)
+        return store.verify_segment(
+            start_sequence=first, previous_sha256=previous
+        )
+
+    destination = tmp_path / "restored-real-evidence.sqlite"
+    report = restore_archive_chain(
+        [(first_database, first_manifest), (second_database, second_manifest)],
+        destination,
+        journal_kind="evidence",
+        schema_version=1,
+        verify_segment=verify_real_segment,
+    )
+
+    assert report.records_restored == 4
+    restored = SQLiteEvidenceStore(destination)
+    assert restored.count() == 4
+    assert restored.verify().valid
