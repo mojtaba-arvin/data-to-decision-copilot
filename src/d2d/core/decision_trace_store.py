@@ -78,8 +78,14 @@ class SQLiteDecisionTraceStore:
     independent anchoring/signing is outside this adapter's trust boundary.
     """
 
-    def __init__(self, path: str | Path) -> None:
+    def __init__(
+        self,
+        path: str | Path,
+        *,
+        trusted_checkpoint: tuple[int, str] | None = None,
+    ) -> None:
         self.path = str(path)
+        self.trusted_checkpoint = trusted_checkpoint
         if self.path != ":memory:":
             Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         with closing(self._connect()) as connection:
@@ -167,6 +173,18 @@ class SQLiteDecisionTraceStore:
         with closing(self._connect()) as connection:
             connection.execute("BEGIN IMMEDIATE")
             checkpoint_sequence, checkpoint_hash = _read_checkpoint(connection)
+            if checkpoint_sequence > 0 and self.trusted_checkpoint != (
+                checkpoint_sequence, checkpoint_hash
+            ):
+                raise RuntimeError(
+                    "non-genesis decision trace checkpoint requires a trusted archive checkpoint"
+                )
+            if self.trusted_checkpoint is not None and self.trusted_checkpoint != (
+                checkpoint_sequence, checkpoint_hash
+            ):
+                raise RuntimeError(
+                    "trusted decision trace checkpoint does not match journal metadata"
+                )
             first = connection.execute(
                 "SELECT sequence, previous_sha256 FROM decision_trace_journal "
                 "ORDER BY sequence ASC LIMIT 1"
@@ -260,6 +278,19 @@ class SQLiteDecisionTraceStore:
         """Verify the active decision-trace journal from its predecessor checkpoint."""
         with closing(self._connect()) as connection:
             checkpoint_sequence, checkpoint_hash = _read_checkpoint(connection)
+            if checkpoint_sequence > 0 and self.trusted_checkpoint != (
+                checkpoint_sequence, checkpoint_hash
+            ):
+                return TraceStoreVerificationReport(
+                    False, 0, 0,
+                    "non-genesis checkpoint requires a trusted archive checkpoint",
+                )
+            if self.trusted_checkpoint is not None and self.trusted_checkpoint != (
+                checkpoint_sequence, checkpoint_hash
+            ):
+                return TraceStoreVerificationReport(
+                    False, 0, 0, "trusted checkpoint does not match journal metadata"
+                )
             count = int(
                 connection.execute("SELECT COUNT(*) FROM decision_trace_journal").fetchone()[0]
             )
