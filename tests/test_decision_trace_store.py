@@ -14,7 +14,7 @@ from d2d.core.decision_trace import create_decision_trace
 from d2d.core.decision_trace_store import SQLiteDecisionTraceStore
 from d2d.core.evidence import create_execution_evidence
 from d2d.core.evidence_store import SQLiteEvidenceStore
-from d2d.core.journal_chain import GENESIS
+from d2d.core.journal_chain import GENESIS, restore_archive_chain
 from d2d.core.journal_restore import restore_paired_journals
 from d2d.core.sql_executor import QueryResult
 
