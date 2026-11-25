@@ -140,3 +140,19 @@ autonomous decision generation.
 - [ ] Journal rotation and retention remain disabled until archive-chain
   verification, crash recovery, restore drills, redundant copies, and audited
   deletion policy are complete.
+
+
+### REST shutdown and request logging implementation boundary
+
+The REST server now records bounded JSON request events using only method,
+normalized route, response status, timestamp, and duration. Request bodies,
+questions, authorization headers, trace identifiers, and arbitrary URL paths
+are not included. The CLI handles SIGINT and SIGTERM by stopping the accept
+loop and waiting for active request handlers before closing shared service
+resources.
+
+The configured `--shutdown-drain-warning-seconds` is a warning threshold, not
+a hard termination deadline: if requests remain active, shutdown logs a warning
+and continues waiting rather than closing databases underneath live handlers.
+A truly bounded shutdown remains open until query/model execution can be
+cancelled and every supervised child worker is proven to terminate on deadline.
