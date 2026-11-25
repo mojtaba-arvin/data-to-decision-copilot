@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
-from typing import Mapping
+from typing import Any, Mapping
 
 
 def inspect_storage(
@@ -11,7 +11,7 @@ def inspect_storage(
     *,
     warning_free_percent: float = 15.0,
     critical_free_percent: float = 5.0,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     """Report filesystem capacity for configured data paths without modifying them."""
     if not 0 <= critical_free_percent < warning_free_percent <= 100:
         raise ValueError(
