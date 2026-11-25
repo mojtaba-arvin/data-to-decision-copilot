@@ -329,7 +329,11 @@ def _write_trace_segment_manifest(
         "database_sha256": hashlib.sha256(database.read_bytes()).hexdigest(),
     }
     canonical = json.dumps(
-        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
     ).encode("utf-8")
     digest = hashlib.sha256(canonical).hexdigest()
     manifest.write_bytes(
