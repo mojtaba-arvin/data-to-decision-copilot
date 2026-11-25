@@ -192,6 +192,35 @@ class CopilotService:
             return None
         return trace.model_dump(mode="json")
 
+    def readiness(self) -> dict[str, object]:
+        """Report whether the catalog and durable journals can serve requests.
+
+        This is a dependency/readiness check, distinct from process liveness.
+        Details are intentionally categorical and do not expose paths or payloads.
+        """
+        checks: dict[str, str] = {}
+        try:
+            self._source.snapshot()
+            checks["catalog"] = "ok"
+        except Exception:
+            checks["catalog"] = "unavailable"
+        try:
+            evidence_report = self._evidence_store.verify()
+            checks["evidence_journal"] = (
+                "ok" if evidence_report.valid else "integrity_failed"
+            )
+        except Exception:
+            checks["evidence_journal"] = "unavailable"
+        try:
+            trace_report = self._trace_store.verify(evidence_store=self._evidence_store)
+            checks["decision_trace_journal"] = (
+                "ok" if trace_report.valid else "integrity_failed"
+            )
+        except Exception:
+            checks["decision_trace_journal"] = "unavailable"
+        ready = all(value == "ok" for value in checks.values())
+        return {"status": "ready" if ready else "not_ready", "checks": checks}
+
     def close(self) -> None:
         """Close the owned DuckDB catalog connection."""
         if isinstance(self._source, DuckDBConnector):
