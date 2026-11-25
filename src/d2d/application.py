@@ -223,6 +223,13 @@ class CopilotService:
             checks["decision_trace_journal"] = "ok"
         except Exception:
             checks["decision_trace_journal"] = "unavailable"
+        if (
+            isinstance(self._planner, ModelBackedQueryPlanner)
+            and isinstance(self._planner.provider, OllamaStructuredPlanProvider)
+        ):
+            checks["model_provider"] = (
+                "ok" if self._planner.provider.is_ready() else "unavailable"
+            )
         ready = all(value == "ok" for value in checks.values())
         return {"status": "ready" if ready else "not_ready", "checks": checks}
 
