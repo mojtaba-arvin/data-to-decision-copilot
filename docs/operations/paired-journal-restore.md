@@ -74,3 +74,29 @@ references before publishing; if writes occur between the two snapshots and a
 DecisionTrace references Evidence absent from the Evidence snapshot, backup
 fails rather than publishing an inconsistent pair. No active journal is
 truncated or rotated.
+
+
+### Publication durability failure
+
+The restore uses a no-replace atomic publication step. Failures before that
+step (including staged database fsync failure) leave no published destination;
+the command removes its private staging directory and propagates the error.
+
+A failure while fsyncing the destination's parent directory occurs **after**
+the verified restore directory has become visible. In that case, the command
+reports the fsync error but deliberately does not remove the published
+destination: its durability across a host crash is uncertain, and deleting it
+could destroy the only visible recovery copy.
+
+If this occurs:
+
+1. Do not immediately retry into the same destination; it already exists.
+2. Keep the destination and source archives intact.
+3. Have an operator independently verify both restored journals and their
+   cross-journal references before using the destination; also inspect
+   filesystem/host storage health.
+4. Treat the restore as unconfirmed until the directory and its parent have
+   been durably synced or a fresh restore to another destination completes.
+
+Never delete the destination merely because the command returned an error
+after publication. Retention and automatic cleanup remain disabled.
