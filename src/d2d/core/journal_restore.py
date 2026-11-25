@@ -289,11 +289,8 @@ def _validate_source_database(
                 "SELECT type, name FROM sqlite_master"
             ).fetchall()
         }
-        required = {
-            ("table", table_name),
-            ("table", meta_table),
-            *(("trigger", name) for name in triggers),
-        }
+        required = {("table", table_name), ("table", meta_table)}
+        required.update(("trigger", name) for name in triggers)
         if not required.issubset(objects):
             raise ValueError(f"{journal_kind} database is missing required journal schema")
         row = connection.execute(
