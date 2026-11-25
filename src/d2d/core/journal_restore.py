@@ -13,6 +13,7 @@ import tempfile
 from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, cast
 from uuid import uuid4
 
 from d2d.core.decision_trace_store import SCHEMA_VERSION as TRACE_SCHEMA_VERSION
@@ -62,9 +63,10 @@ def _discover_segments(
     for manifest_path in manifests:
         if manifest_path.is_symlink() or not manifest_path.is_file():
             raise ValueError(f"invalid {journal_kind} manifest file: {manifest_path}")
-        document = json.loads(manifest_path.read_bytes())
-        if not isinstance(document, dict):
+        parsed: Any = json.loads(manifest_path.read_bytes())
+        if not isinstance(parsed, dict):
             raise ValueError(f"invalid {journal_kind} manifest: expected an object")
+        document = cast(dict[str, Any], parsed)
         if document.get("journal_kind") != journal_kind:
             raise ValueError(f"archive contains a non-{journal_kind} manifest")
         if document.get("schema_version") != schema_version:
