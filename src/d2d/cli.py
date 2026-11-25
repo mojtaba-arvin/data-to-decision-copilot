@@ -113,12 +113,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                     )
                     server.server_close()
                     if not drained:
-                        close_service_on_exit = False
-                        logging.getLogger("d2d.shutdown").critical(
+                        logging.getLogger("d2d.shutdown").warning(
                             json.dumps({
-                                "event": "shutdown_drain_timeout",
+                                "event": "shutdown_drain_exceeded_warning_threshold",
                                 "active_requests": "at_least_one",
-                                "timeout_seconds": args.shutdown_drain_timeout_seconds,
+                                "warning_after_seconds": args.shutdown_drain_warning_seconds,
+                                "policy": "wait_for_requests_before_closing_service",
                             }, separators=(",", ":"))
                         )
                 finally:
