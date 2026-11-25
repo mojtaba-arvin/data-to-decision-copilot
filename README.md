@@ -68,6 +68,7 @@ Install the package in editable mode, then use the `d2d` command:
 
 ```bash
 uv sync --locked --all-groups
+d2d demo --output ./analytics.duckdb
 d2d schema --catalog ./analytics.duckdb
 d2d query --catalog ./analytics.duckdb --question "count rows in orders"
 d2d query --catalog ./analytics.duckdb --isolated-worker --question "count rows in orders"
