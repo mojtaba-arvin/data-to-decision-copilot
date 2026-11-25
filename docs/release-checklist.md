@@ -118,6 +118,10 @@ autonomous decision generation.
   timeouts, and worker crashes have actionable operator signals.
 - [ ] Query-history and journal data lifecycle/retention behavior is explicit;
   no implicit deletion is allowed.
+  - [x] Query history now retains all records by default; automatic pruning is
+    opt-in through `--history-max-records N`.
+  - [ ] Evidence/DecisionTrace journal pruning remains disabled; source-data
+    lifecycle is controlled by the deployment and still needs an operator policy.
 
 ### Backup, restore, and upgrades
 
