@@ -18,6 +18,10 @@ from typing import Any, Literal, Protocol, cast
 
 JournalKind = Literal["evidence", "decision_trace"]
 GENESIS = "0" * 64
+_TABLES = {
+    "evidence": ("evidence_journal", "journal_meta"),
+    "decision_trace": ("decision_trace_journal", "trace_store_meta"),
+}
 _SEGMENT_FIELDS = {
     "format_version", "journal_kind", "database_file", "schema_version",
     "segment_id", "first_sequence", "last_sequence", "records",
