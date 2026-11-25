@@ -86,6 +86,39 @@ jobs:
         if: hashFiles('src/d2d/cli.py') != ''
         run: uv run --no-project --with dist/*.whl d2d --help
 
+  offline-wheelhouse-smoke:
+    name: Offline wheelhouse install and demo journey
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Export locked runtime dependencies
+        run: uv export --locked --format requirements-txt --no-dev --no-emit-project -o requirements-runtime.txt
+      - name: Prepare wheelhouse
+        run: |
+          mkdir wheelhouse
+          python -m pip download --only-binary=:all: -r requirements-runtime.txt -d wheelhouse/
+          uv build
+          cp dist/*.whl wheelhouse/
+      - name: Install exclusively from wheelhouse
+        run: |
+          python -m venv offline-venv
+          offline-venv/bin/python -m pip install --no-index --find-links ./wheelhouse ./wheelhouse/data_to_decision_copilot-*.whl
+      - name: Run installed offline demo journey
+        run: |
+          offline-venv/bin/d2d --help
+          offline-venv/bin/d2d demo --output ./offline-demo.duckdb
+          offline-venv/bin/d2d schema --catalog ./offline-demo.duckdb
+          offline-venv/bin/d2d query --catalog ./offline-demo.duckdb --question "count rows in sales"
+
   real-ollama-smoke:
     name: Optional real Ollama inference
     if: (github.event_name == 'workflow_dispatch' && inputs.run_real_ollama) || github.ref == 'refs/heads/ci/c3-real-ollama-smoke'
