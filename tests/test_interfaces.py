@@ -328,6 +328,7 @@ def test_rest_request_logs_are_structured_and_exclude_question_payload(
         catalog_path=str(catalog),
         evidence_path=str(tmp_path / "redacted-log-evidence.sqlite"),
     )
+
     async def fake_query(question: str) -> dict[str, object]:
         return {"question": question, "rows": [[2]]}
 
@@ -342,16 +343,27 @@ def test_rest_request_logs_are_structured_and_exclude_question_payload(
         headers={"Content-Type": "application/json"},
         method="POST",
     )
+    log_received = threading.Event()
+    log_records: list[logging.LogRecord] = []
+
+    class RequestLogCapture(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            log_records.append(record)
+            log_received.set()
+
+    logger = logging.getLogger("d2d.api")
+    previous_level = logger.level
+    capture = RequestLogCapture()
+    logger.setLevel(logging.INFO)
+    logger.addHandler(capture)
     try:
-        with (
-            caplog.at_level(logging.INFO, logger="d2d.api"),
-            urlopen(request, timeout=5) as response,
-        ):
+        with urlopen(request, timeout=5) as response:
             assert response.status == 200
             response.read()
+        assert log_received.wait(5)
         messages = [
             record.getMessage()
-            for record in caplog.records
+            for record in log_records
             if record.name == "d2d.api" and record.getMessage()
         ]
         assert len(messages) == 1
