@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sqlite3
+import stat
 from pathlib import Path
 from typing import Any
 
 from d2d.core.evidence import create_execution_evidence
 from d2d.core.evidence_store import SQLiteEvidenceStore
+from d2d.core import journal_chain
 from d2d.core.journal_chain import GENESIS, restore_archive_chain, verify_archive_chain
 from d2d.core.sql_executor import QueryResult
 
@@ -459,3 +462,103 @@ def test_restores_real_evidence_store_segments_and_reopens_as_genesis_journal(
     restored = SQLiteEvidenceStore(destination)
     assert restored.count() == 4
     assert restored.verify().valid
+
+
+
+def _restore_segments_for_fault_test(tmp_path: Path):
+    first = make_segment(
+        tmp_path, name="fault-segment-1", first=1, last=1,
+        previous_entry=GENESIS, previous_manifest=GENESIS,
+    )
+    second = make_segment(
+        tmp_path, name="fault-segment-2", first=2, last=2,
+        previous_entry=first[3], previous_manifest=first[2],
+    )
+    return [(first[0], first[1]), (second[0], second[1])]
+
+
+def test_restore_file_fsync_failure_does_not_publish_or_leave_staging(
+    tmp_path: Path, monkeypatch,
+):
+    segments = _restore_segments_for_fault_test(tmp_path)
+    destination = tmp_path / "restore-fsync-failure.sqlite"
+
+    def fail_file_fsync(descriptor: int) -> None:
+        if not stat.S_ISDIR(os.fstat(descriptor).st_mode):
+            raise OSError("simulated staged database fsync failure")
+
+    monkeypatch.setattr(journal_chain.os, "fsync", fail_file_fsync)
+
+    try:
+        restore_archive_chain(
+            segments, destination, journal_kind="evidence", schema_version=1,
+            verify_segment=segment_verifier,
+        )
+    except OSError as exc:
+        assert "staged database fsync failure" in str(exc)
+    else:
+        raise AssertionError("restore must propagate a staged database fsync failure")
+
+    assert not destination.exists()
+    assert not list(tmp_path.glob(".d2d-chain-restore-*"))
+
+
+def test_restore_no_replace_publication_race_preserves_existing_destination(
+    tmp_path: Path, monkeypatch,
+):
+    segments = _restore_segments_for_fault_test(tmp_path)
+    destination = tmp_path / "restore-race.sqlite"
+
+    def race_with_operator_file(source: Path, target: Path) -> None:
+        target.write_bytes(b"operator-created-after-preflight")
+        raise FileExistsError(target)
+
+    monkeypatch.setattr(journal_chain.os, "link", race_with_operator_file)
+
+    try:
+        restore_archive_chain(
+            segments, destination, journal_kind="evidence", schema_version=1,
+            verify_segment=segment_verifier,
+        )
+    except FileExistsError:
+        pass
+    else:
+        raise AssertionError("restore must not overwrite a concurrently created destination")
+
+    assert destination.read_bytes() == b"operator-created-after-preflight"
+    assert not list(tmp_path.glob(".d2d-chain-restore-*"))
+
+
+def test_restore_parent_directory_fsync_failure_keeps_published_verified_database(
+    tmp_path: Path, monkeypatch,
+):
+    segments = _restore_segments_for_fault_test(tmp_path)
+    destination = tmp_path / "restore-directory-fsync-failure.sqlite"
+    real_fsync = os.fsync
+    directory_syncs = 0
+
+    def fail_parent_fsync(descriptor: int) -> None:
+        nonlocal directory_syncs
+        if stat.S_ISDIR(os.fstat(descriptor).st_mode):
+            directory_syncs += 1
+            raise OSError("simulated parent directory fsync failure")
+        real_fsync(descriptor)
+
+    monkeypatch.setattr(journal_chain.os, "fsync", fail_parent_fsync)
+
+    try:
+        restore_archive_chain(
+            segments, destination, journal_kind="evidence", schema_version=1,
+            verify_segment=segment_verifier,
+        )
+    except OSError as exc:
+        assert "parent directory fsync failure" in str(exc)
+    else:
+        raise AssertionError("restore must report a failed publication durability sync")
+
+    # The hard link has already made the verified database visible. Removing it
+    # here would hide a possibly durable restore; leave it for operator inspection.
+    assert directory_syncs == 1
+    assert destination.is_file()
+    assert segment_verifier(destination, 1, GENESIS).valid
+    assert not list(tmp_path.glob(".d2d-chain-restore-*"))
