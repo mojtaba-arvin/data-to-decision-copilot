@@ -119,6 +119,42 @@ jobs:
           offline-venv/bin/d2d schema --catalog ./offline_demo.duckdb
           offline-venv/bin/d2d query --catalog ./offline_demo.duckdb --question "count rows in sales"
 
+  browser-ui:
+    name: Browser UI localization and golden path
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install pinned Playwright
+        run: npm install --no-save --no-package-lock playwright@1.55.0
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Serve browser UI
+        run: |
+          python -m http.server 4173 --bind 127.0.0.1 --directory ui >/tmp/d2d-ui.log 2>&1 &
+          echo $! > /tmp/d2d-ui.pid
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:4173/ >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/d2d-ui.log
+          exit 1
+      - name: Verify English/Persian RTL and browser golden path
+        run: |
+          node tests/browser/ui.spec.mjs
+      - name: Stop browser UI server
+        if: always()
+        run: |
+          if [ -f /tmp/d2d-ui.pid ]; then kill "$(cat /tmp/d2d-ui.pid)" || true; fi
+
   real-ollama-smoke:
     name: Optional real Ollama inference
     if: (github.event_name == 'workflow_dispatch' && inputs.run_real_ollama) || github.ref == 'refs/heads/ci/c3-real-ollama-smoke'
