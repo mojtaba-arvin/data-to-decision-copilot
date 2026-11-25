@@ -195,8 +195,10 @@ class CopilotService:
     def readiness(self) -> dict[str, object]:
         """Report whether the catalog and durable journals can serve requests.
 
-        This is a dependency/readiness check, distinct from process liveness.
-        Details are intentionally categorical and do not expose paths or payloads.
+        This is a lightweight dependency check, distinct from process liveness.
+        It deliberately avoids full hash-chain scans on every probe; integrity
+        verification belongs in explicit audit, backup, and restore operations.
+        Details are categorical and do not expose paths or payloads.
         """
         checks: dict[str, str] = {}
         try:
@@ -205,17 +207,13 @@ class CopilotService:
         except Exception:
             checks["catalog"] = "unavailable"
         try:
-            evidence_report = self._evidence_store.verify()
-            checks["evidence_journal"] = (
-                "ok" if evidence_report.valid else "integrity_failed"
-            )
+            self._evidence_store.count()
+            checks["evidence_journal"] = "ok"
         except Exception:
             checks["evidence_journal"] = "unavailable"
         try:
-            trace_report = self._trace_store.verify(evidence_store=self._evidence_store)
-            checks["decision_trace_journal"] = (
-                "ok" if trace_report.valid else "integrity_failed"
-            )
+            self._trace_store.count()
+            checks["decision_trace_journal"] = "ok"
         except Exception:
             checks["decision_trace_journal"] = "unavailable"
         ready = all(value == "ok" for value in checks.values())
