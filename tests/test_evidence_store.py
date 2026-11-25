@@ -151,3 +151,48 @@ def test_checkpoint_aware_verifier_accepts_non_genesis_segment(tmp_path: Path):
     rejected = store.verify_segment(start_sequence=2, previous_sha256="0" * 64)
     assert not rejected.valid
     assert rejected.error == "previous-entry link mismatch"
+
+
+def test_checkpoint_metadata_preserves_sequence_after_archived_prefix(tmp_path: Path):
+    store = SQLiteEvidenceStore(tmp_path / "checkpoint-evidence.sqlite")
+    store.append(make_evidence(1))
+    store.append(make_evidence(2))
+    assert store.initialize_checkpoint_metadata() == (0, "0" * 64)
+
+    with closing(sqlite3.connect(store.path)) as connection:
+        head = connection.execute(
+            "SELECT entry_sha256 FROM evidence_journal WHERE sequence = 2"
+        ).fetchone()[0]
+        connection.execute("DROP TRIGGER evidence_no_delete")
+        connection.execute("DELETE FROM evidence_journal")
+        connection.execute(
+            "UPDATE journal_meta SET value = '2' WHERE key = 'checkpoint_sequence'"
+        )
+        connection.execute(
+            "UPDATE journal_meta SET value = ? WHERE key = 'checkpoint_sha256'", (head,)
+        )
+        connection.commit()
+
+    assert store.verify().valid
+    assert store.append(make_evidence(3)) == 3
+    assert store.verify().valid
+    assert store.count() == 1
+
+
+def test_checkpoint_metadata_initialization_refuses_invalid_journal(tmp_path: Path):
+    store = SQLiteEvidenceStore(tmp_path / "invalid-checkpoint-evidence.sqlite")
+    store.append(make_evidence())
+    with closing(sqlite3.connect(store.path)) as connection:
+        connection.execute("DROP TRIGGER evidence_no_update")
+        connection.execute(
+            "UPDATE evidence_journal SET payload = '{}' WHERE sequence = 1"
+        )
+        connection.commit()
+
+    with pytest.raises(ValueError, match="invalid journal"):
+        store.initialize_checkpoint_metadata()
+    with closing(sqlite3.connect(store.path)) as connection:
+        keys = connection.execute(
+            "SELECT COUNT(*) FROM journal_meta WHERE key LIKE 'checkpoint_%'"
+        ).fetchone()[0]
+    assert keys == 0
