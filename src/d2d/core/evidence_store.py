@@ -168,29 +168,54 @@ class SQLiteEvidenceStore:
         )
 
     def verify(self) -> VerificationReport:
-        """Recompute evidence, record, sequence, and complete chain digests."""
+        """Verify a complete genesis-anchored journal."""
+        return self.verify_segment(start_sequence=1, previous_sha256=GENESIS)
+
+    def verify_segment(
+        self, *, start_sequence: int, previous_sha256: str
+    ) -> VerificationReport:
+        """Verify a contiguous journal segment against an explicit predecessor checkpoint.
+
+        This validates record integrity and sequence/hash continuity within this
+        database. The caller remains responsible for authenticating the checkpoint
+        through the preceding archive manifest or another trusted anchor.
+        """
+        if start_sequence < 1:
+            raise ValueError("start_sequence must be positive")
+        if len(previous_sha256) != 64:
+            raise ValueError("previous_sha256 must be a SHA-256 digest")
+        try:
+            int(previous_sha256, 16)
+        except ValueError as exc:
+            raise ValueError("previous_sha256 must be a SHA-256 digest") from exc
+
         with closing(self._connect()) as connection:
             rows = connection.execute(
                 "SELECT sequence, evidence_id, payload, record_sha256, "
                 "previous_sha256, entry_sha256 FROM evidence_journal ORDER BY sequence"
             ).fetchall()
 
-        previous = GENESIS
-        for expected, row in enumerate(rows, start=1):
+        if not rows:
+            if start_sequence == 1 and previous_sha256 == GENESIS:
+                return VerificationReport(True, 0)
+            return VerificationReport(False, 0, "journal segment must not be empty")
+
+        previous = previous_sha256
+        for expected, row in enumerate(rows, start=start_sequence):
             if row["sequence"] != expected:
-                return VerificationReport(False, expected - 1, "non-contiguous sequence")
+                return VerificationReport(False, expected - start_sequence, "non-contiguous sequence")
             if row["previous_sha256"] != previous:
-                return VerificationReport(False, expected - 1, "previous-entry link mismatch")
+                return VerificationReport(False, expected - start_sequence, "previous-entry link mismatch")
             try:
                 evidence = Evidence.model_validate_json(row["payload"])
                 _validate_evidence(evidence)
             except (ValueError, TypeError) as exc:
-                return VerificationReport(False, expected - 1, f"invalid evidence: {exc}")
+                return VerificationReport(False, expected - start_sequence, f"invalid evidence: {exc}")
             if evidence.evidence_id != row["evidence_id"]:
-                return VerificationReport(False, expected - 1, "evidence ID mismatch")
+                return VerificationReport(False, expected - start_sequence, "evidence ID mismatch")
             record_hash = hashlib.sha256(row["payload"].encode("utf-8")).hexdigest()
             if record_hash != row["record_sha256"]:
-                return VerificationReport(False, expected - 1, "record digest mismatch")
+                return VerificationReport(False, expected - start_sequence, "record digest mismatch")
             entry_hash = _digest(
                 {
                     "schema_version": SCHEMA_VERSION,
@@ -201,6 +226,6 @@ class SQLiteEvidenceStore:
                 }
             )
             if entry_hash != row["entry_sha256"]:
-                return VerificationReport(False, expected - 1, "entry digest mismatch")
+                return VerificationReport(False, expected - start_sequence, "entry digest mismatch")
             previous = entry_hash
         return VerificationReport(True, len(rows))
