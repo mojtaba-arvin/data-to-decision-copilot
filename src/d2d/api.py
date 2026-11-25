@@ -96,6 +96,7 @@ def create_server(
         raise ValueError("TLS certificate and key must be configured together")
 
     query_slots = BoundedSemaphore(max_concurrent_queries)
+
     class Handler(BaseHTTPRequestHandler):
         def setup(self) -> None:
             super().setup()
