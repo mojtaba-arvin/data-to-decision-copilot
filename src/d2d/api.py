@@ -74,6 +74,30 @@ class _DrainableThreadingHTTPServer(ThreadingHTTPServer):
         return connection, address
 
 
+def validate_server_config(
+    *,
+    host: str = "127.0.0.1",
+    port: int = 8765,
+    max_concurrent_queries: int = 4,
+    request_socket_timeout_seconds: float = 10.0,
+    bearer_token: str | None = None,
+    tls_certfile: str | None = None,
+    tls_keyfile: str | None = None,
+) -> None:
+    """Validate REST bind and transport settings without opening service resources."""
+    if not 0 <= port <= 65_535:
+        raise ValueError("REST API port must be between 0 and 65535")
+    validate_server_config(
+        host=host,
+        port=port,
+        max_concurrent_queries=max_concurrent_queries,
+        request_socket_timeout_seconds=request_socket_timeout_seconds,
+        bearer_token=bearer_token,
+        tls_certfile=tls_certfile,
+        tls_keyfile=tls_keyfile,
+    )
+
+
 def create_server(
     service: CopilotService, *, host: str = "127.0.0.1", port: int = 8765,
     max_concurrent_queries: int = 4,
