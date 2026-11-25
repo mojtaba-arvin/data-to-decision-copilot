@@ -418,7 +418,7 @@ def test_restores_real_evidence_store_segments_and_reopens_as_genesis_journal(
     )
 
     second_live_path = tmp_path / "second-live.sqlite"
-    second_live = SQLiteEvidenceStore(second_live_path)
+    SQLiteEvidenceStore(second_live_path)
     with sqlite3.connect(second_live_path) as connection:
         connection.executemany(
             "INSERT INTO journal_meta(key, value) VALUES (?, ?)",
