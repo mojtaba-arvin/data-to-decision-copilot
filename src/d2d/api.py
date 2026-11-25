@@ -22,8 +22,8 @@ _logger = logging.getLogger(__name__)
 
 
 class _DrainableThreadingHTTPServer(ThreadingHTTPServer):
-    daemon_threads = True
-    block_on_close = False
+    daemon_threads = False
+    block_on_close = True
 
     def __init__(
         self,
