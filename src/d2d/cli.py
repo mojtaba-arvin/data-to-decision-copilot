@@ -93,6 +93,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             serve_thread = Thread(
                 target=server.serve_forever, name="d2d-rest-acceptor", daemon=True
             )
+            previous_sigint = signal.signal(signal.SIGINT, signal.default_int_handler)
             previous_sigterm = signal.signal(signal.SIGTERM, signal.default_int_handler)
             try:
                 serve_thread.start()
@@ -103,6 +104,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             except KeyboardInterrupt:
                 pass
             finally:
+                signal.signal(signal.SIGINT, signal.SIG_IGN)
+                signal.signal(signal.SIGTERM, signal.SIG_IGN)
                 try:
                     if serve_thread.is_alive():
                         server.shutdown()
@@ -122,6 +125,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                             }, separators=(",", ":"))
                         )
                 finally:
+                    signal.signal(signal.SIGINT, previous_sigint)
                     signal.signal(signal.SIGTERM, previous_sigterm)
             return 0 if drained else 1
     finally:
