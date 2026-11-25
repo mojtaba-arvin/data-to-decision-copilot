@@ -51,6 +51,11 @@ def _parser() -> argparse.ArgumentParser:
         command.add_argument("--catalog", required=True, help="DuckDB catalog path")
         command.add_argument("--evidence-db", default="d2d-evidence.sqlite")
         command.add_argument("--history-db", default="d2d-history.sqlite")
+        command.add_argument(
+            "--history-max-records",
+            type=int,
+            help="Opt-in automatic query-history pruning limit; omitted means retain all records",
+        )
         command.add_argument("--provider", choices=("rules", "ollama"), default="rules")
         command.add_argument("--model", default="qwen3:8b")
         command.add_argument(
@@ -101,6 +106,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         catalog_path=args.catalog,
         evidence_path=args.evidence_db,
         history_path=args.history_db,
+        history_max_records=args.history_max_records,
         provider=args.provider,
         model=args.model,
         isolated_worker=args.isolated_worker,
