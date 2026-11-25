@@ -165,7 +165,10 @@ def restore_paired_journals(
     """
     evidence_root = Path(evidence_archive).resolve(strict=True)
     trace_root = Path(trace_archive).resolve(strict=True)
-    target = Path(destination).absolute()
+    supplied_target = Path(destination)
+    if supplied_target.is_symlink():
+        raise FileExistsError(f"restore destination already exists: {supplied_target}")
+    target = supplied_target.resolve(strict=False)
     if target.name in {"", ".", ".."}:
         raise ValueError("restore destination must name a new directory")
     if target.exists() or target.is_symlink():
