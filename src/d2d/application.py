@@ -239,32 +239,40 @@ def build_service(
     """Build the same read-only query pipeline for every product interface."""
     source = DuckDBConnector(catalog_path)
     source.open()
-    if provider == "rules":
-        planner: QueryPlanner = RuleBasedSemanticPlanner()
-    elif provider == "ollama":
-        planner = ModelBackedQueryPlanner(
-            provider=OllamaStructuredPlanProvider(model=model),
-            provider_identity=ModelProviderIdentity(
-                provider="ollama", model=model, revision=f"local-tag-{model}",
+    history_store: SQLiteQueryHistoryStore | None = None
+    try:
+        if provider == "rules":
+            planner: QueryPlanner = RuleBasedSemanticPlanner()
+        elif provider == "ollama":
+            planner = ModelBackedQueryPlanner(
+                provider=OllamaStructuredPlanProvider(model=model),
+                provider_identity=ModelProviderIdentity(
+                    provider="ollama", model=model, revision=f"local-tag-{model}",
+                ),
+            )
+        else:
+            raise ValueError("provider must be 'rules' or 'ollama'")
+        evidence_store = SQLiteEvidenceStore(evidence_path)
+        history_store = SQLiteQueryHistoryStore(history_path)
+        trace_store = SQLiteDecisionTraceStore(trace_path)
+        return CopilotService(
+            source=source,
+            executor=(
+                IsolatedDuckDBQueryExecutor(catalog_path)
+                if isolated_worker
+                else DuckDBQueryExecutor(catalog_path)
             ),
+            evidence_store=evidence_store,
+            planner=planner,
+            source_id="analytics-catalog",
+            history_store=history_store,
+            trace_store=trace_store,
         )
-    else:
+    except BaseException:
+        if history_store is not None:
+            history_store.close()
         source.close()
-        raise ValueError("provider must be 'rules' or 'ollama'")
-    evidence_store = SQLiteEvidenceStore(evidence_path)
-    return CopilotService(
-        source=source,
-        executor=(
-            IsolatedDuckDBQueryExecutor(catalog_path)
-            if isolated_worker
-            else DuckDBQueryExecutor(catalog_path)
-        ),
-        evidence_store=evidence_store,
-        planner=planner,
-        source_id="analytics-catalog",
-        history_store=SQLiteQueryHistoryStore(history_path),
-        trace_store=SQLiteDecisionTraceStore(trace_path),
-    )
+        raise
 
 
 def _json_value(value: object) -> object:
