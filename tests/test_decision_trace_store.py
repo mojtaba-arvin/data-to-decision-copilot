@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+import d2d.core.journal_restore as journal_restore
 from d2d.cli import main
 from d2d.core.contracts import Confidence, Decision, DecisionClaim, DecisionTrace, Evidence
 from d2d.core.decision_trace import create_decision_trace
@@ -489,7 +490,9 @@ def _write_evidence_segment_manifest(
 
 
 def test_restores_paired_journals_and_replays_traces_against_restored_evidence(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ):
     archive = tmp_path / "paired-archive"
     evidence_archive = archive / "evidence"
@@ -605,6 +608,17 @@ def test_restores_paired_journals_and_replays_traces_against_restored_evidence(
     assert verification.evidence_checked == 4
     with pytest.raises(FileExistsError):
         restore_paired_journals(evidence_archive, trace_archive, restored_directory)
+
+    unpublished = tmp_path / "unpublished-pair"
+
+    def fail_publish(source: Path, destination: Path) -> None:
+        raise PermissionError("injected atomic publication failure")
+
+    monkeypatch.setattr(journal_restore, "_rename_directory_no_replace", fail_publish)
+    with pytest.raises(PermissionError, match="injected atomic publication failure"):
+        restore_paired_journals(evidence_archive, trace_archive, unpublished)
+    assert not unpublished.exists()
+
     for trace in first_trace_records + second_trace_records:
         assert restored_traces.replay(
             trace.trace_id,
