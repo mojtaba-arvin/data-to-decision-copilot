@@ -16,6 +16,7 @@ from d2d.api import create_server, validate_server_config
 from d2d.application import build_service
 from d2d.core.journal_restore import backup_paired_journals, restore_paired_journals
 from d2d.demo import create_demo_catalog
+from d2d.diagnostics import inspect_storage
 from d2d.mcp import run_stdio
 
 
@@ -39,6 +40,16 @@ def _parser() -> argparse.ArgumentParser:
     restore.add_argument("--evidence-archive", type=Path, required=True)
     restore.add_argument("--trace-archive", type=Path, required=True)
     restore.add_argument("--output", type=Path, required=True)
+
+    doctor = subparsers.add_parser(
+        "doctor", help="Inspect free space on filesystems holding application data"
+    )
+    doctor.add_argument("--catalog", type=Path, default=Path("analytics.duckdb"))
+    doctor.add_argument("--evidence-db", type=Path, default=Path("d2d-evidence.sqlite"))
+    doctor.add_argument("--history-db", type=Path, default=Path("d2d-history.sqlite"))
+    doctor.add_argument("--trace-db", type=Path, default=Path("d2d-traces.sqlite"))
+    doctor.add_argument("--warning-free-percent", type=float, default=15.0)
+    doctor.add_argument("--critical-free-percent", type=float, default=5.0)
 
     for name in ("query", "serve", "mcp", "schema", "demo"):
         command = subparsers.add_parser(name)
@@ -82,6 +93,19 @@ def _parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    if args.command == "doctor":
+        report = inspect_storage(
+            {
+                "catalog": args.catalog,
+                "evidence_journal": args.evidence_db,
+                "query_history": args.history_db,
+                "decision_trace_journal": args.trace_db,
+            },
+            warning_free_percent=args.warning_free_percent,
+            critical_free_percent=args.critical_free_percent,
+        )
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 1 if report["status"] in {"critical", "unavailable"} else 0
     if args.command == "demo":
         destination = create_demo_catalog(args.output)
         print(f"Created synthetic demo catalog: {destination}")
