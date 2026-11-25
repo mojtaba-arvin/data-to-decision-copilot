@@ -66,7 +66,7 @@ def test_shared_service_can_execute_queries_in_isolated_worker(
 def test_rest_api_serves_query_history_and_schema(catalog: Path, tmp_path: Path) -> None:
     service = build_service(
         catalog_path=str(catalog), evidence_path=str(tmp_path / "api-evidence.sqlite"),
-        trace_path=str(tmp_path / "api-traces.sqlite"),
+        trace_path=str(tmp_path / "api-traces.sqlite"), history_max_records=1,
     )
     server = create_server(service, port=0)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
