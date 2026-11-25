@@ -168,3 +168,20 @@ journal transition.
 
 This increment enables checkpoint-aware append mechanics; it does not authorize
 rotation, checkpoint advancement, archive restore publication, or retention.
+
+
+## Implementation increment: full-chain restore
+
+The generic `restore_archive_chain` path now reconstructs a genesis-to-head
+journal from independently verified immutable segments, checks persisted
+checkpoint metadata against each manifest boundary, verifies the reconstructed
+journal from genesis, re-verifies the source chain, and publishes to a fresh
+destination using atomic no-overwrite publication. PR #60 adds a real
+EvidenceStore multi-segment restore test. The next increment validates the same
+contract for DecisionTrace and replays every restored trace against its paired
+Evidence journal.
+
+This remains restore-only. It does not implement rotation, active checkpoint
+advancement, signatures, redundant archive copies, or retention. Crash/fault
+injection for restore publication and paired Evidence/DecisionTrace recovery
+remain required before the archive lifecycle can be considered operational.

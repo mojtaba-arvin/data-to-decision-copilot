@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed; implementation is blocked on segment-aware chain continuity and crash-recovery tests.
+Partially implemented; segment verification and full-chain restore are available. Rotation remains blocked on crash-recovery and idempotency tests.
 
 ## Context
 
@@ -28,3 +28,15 @@ Retention is an archive lifecycle policy. The default is no deletion. A complete
 - Rotation is a multi-phase protocol requiring crash recovery and idempotency tests.
 - Archive verification can work offline; public keys/trust-store changes are operational inputs.
 - Until implementation is complete, operators must keep verified backups and monitor disk growth; no automatic pruning is supported.
+
+
+## Implementation status (2026-11-25)
+
+Segment-aware archive verification, checkpoint-aware journal segments, durable
+manifest publication, and generic full-chain restore have been merged. Full-chain
+restore is verified with real EvidenceStore segments; DecisionTrace restore and
+paired historical replay are the next test gate. This does not authorize live
+journal rotation or retention. Rotation remains disabled until crash injection
+covers every durable transition, concurrent append/WAL behavior is proven, and
+recovery is idempotent. Retention remains disabled until redundant archive-copy
+verification and auditable deletion policy are implemented.
