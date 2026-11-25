@@ -121,7 +121,7 @@ jobs:
 
   browser-ui:
     name: Browser UI localization and golden path
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
