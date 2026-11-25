@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import errno
 import json
 import logging
 import socket
+import sqlite3
 import threading
 from io import StringIO
 from pathlib import Path
@@ -15,6 +17,7 @@ import pytest
 
 from d2d.api import create_server
 from d2d.application import build_service
+from d2d.core.sql_executor import QueryExecutionError, QueryTimeoutError, QueryWorkerError
 from d2d.mcp import run_stdio
 
 
@@ -449,4 +452,58 @@ def test_rest_server_tracks_active_requests_before_close(
         server.server_close()
         serve_thread.join(timeout=5)
         request_thread.join(timeout=5)
+        service.close()
+
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected_status", "expected_code"),
+    [
+        (QueryTimeoutError("private timeout detail"), 504, "query_timeout"),
+        (QueryWorkerError("private worker detail"), 503, "query_worker_unavailable"),
+        (QueryExecutionError("private query detail"), 422, "query_execution_failed"),
+        (sqlite3.OperationalError("database is locked"), 503, "storage_busy"),
+        (sqlite3.OperationalError("database or disk is full"), 507, "storage_unavailable"),
+        (OSError(errno.ENOSPC, "private disk path"), 507, "storage_unavailable"),
+        (sqlite3.DatabaseError("private corruption detail"), 503, "storage_unavailable"),
+        (RuntimeError("private unexpected detail"), 500, "request_failed"),
+    ],
+)
+def test_rest_query_failures_have_safe_actionable_statuses(
+    catalog: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: Exception,
+    expected_status: int,
+    expected_code: str,
+) -> None:
+    service = build_service(
+        catalog_path=str(catalog),
+        evidence_path=str(tmp_path / "failure-signals-evidence.sqlite"),
+    )
+
+    async def failed_query(question: str) -> dict[str, object]:
+        raise failure
+
+    monkeypatch.setattr(service, "query", failed_query)
+    server = create_server(service, port=0)
+    serve_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    serve_thread.start()
+    request = Request(
+        f"http://{server.server_address[0]}:{server.server_port}/v1/query",
+        data=json.dumps({"question": "count rows in orders"}).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with pytest.raises(HTTPError) as response:
+            urlopen(request, timeout=5)
+        assert response.value.code == expected_status
+        payload = json.loads(response.value.read())
+        assert payload == {"error": expected_code}
+        assert str(failure) not in json.dumps(payload)
+    finally:
+        server.shutdown()
+        server.server_close()
+        serve_thread.join(timeout=5)
         service.close()
