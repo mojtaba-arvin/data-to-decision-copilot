@@ -6,7 +6,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from d2d.core.journal_chain import GENESIS, verify_archive_chain
+from d2d.core.journal_chain import GENESIS, restore_archive_chain, verify_archive_chain
 
 
 def _canonical_for_test(value: Any) -> bytes:
@@ -255,3 +255,89 @@ def test_rejects_noncanonical_manifest(tmp_path: Path):
     )
     assert not report.valid
     assert "not canonical" in (report.error or "")
+
+
+def test_restores_full_chain_to_new_database_without_rewriting_hashes(tmp_path: Path):
+    first = make_segment(
+        tmp_path, name="restore-segment-1", first=1, last=2,
+        previous_entry=GENESIS, previous_manifest=GENESIS,
+    )
+    second = make_segment(
+        tmp_path, name="restore-segment-2", first=3, last=4,
+        previous_entry=first[3], previous_manifest=first[2],
+    )
+    destination = tmp_path / "restored-full-journal.sqlite"
+
+    report = restore_archive_chain(
+        [(first[0], first[1]), (second[0], second[1])],
+        destination,
+        journal_kind="evidence",
+        schema_version=1,
+        verify_segment=segment_verifier,
+    )
+
+    assert report.destination == str(destination)
+    assert report.segments_checked == 2
+    assert report.records_restored == 4
+    assert report.last_sequence == 4
+    assert report.head_sha256 == second[3]
+    assert segment_verifier(destination, 1, GENESIS).valid
+    with sqlite3.connect(destination) as connection:
+        rows = connection.execute(
+            "SELECT sequence, previous_sha256, entry_sha256 "
+            "FROM evidence_journal ORDER BY sequence"
+        ).fetchall()
+    assert [row[0] for row in rows] == [1, 2, 3, 4]
+    assert rows[2][1] == rows[1][2]
+    assert rows[3][1] == rows[2][2]
+
+
+def test_restore_refuses_existing_destination(tmp_path: Path):
+    segment = make_segment(
+        tmp_path, name="existing-destination-segment", first=1, last=1,
+        previous_entry=GENESIS, previous_manifest=GENESIS,
+    )
+    destination = tmp_path / "existing.sqlite"
+    destination.write_bytes(b"operator data")
+
+    try:
+        restore_archive_chain(
+            [(segment[0], segment[1])],
+            destination,
+            journal_kind="evidence",
+            schema_version=1,
+            verify_segment=segment_verifier,
+        )
+    except FileExistsError:
+        pass
+    else:
+        raise AssertionError("restore must not overwrite an existing destination")
+    assert destination.read_bytes() == b"operator data"
+
+
+def test_chain_rejects_checkpoint_that_disagrees_with_manifest_predecessor(
+    tmp_path: Path,
+):
+    first = make_segment(
+        tmp_path, name="checkpoint-segment-1", first=1, last=1,
+        previous_entry=GENESIS, previous_manifest=GENESIS,
+    )
+    second = make_segment(
+        tmp_path, name="checkpoint-segment-2", first=2, last=2,
+        previous_entry=first[3], previous_manifest=first[2],
+    )
+    with sqlite3.connect(second[0]) as connection:
+        connection.execute(
+            "UPDATE journal_meta SET value = ? WHERE key = 'checkpoint_sha256'",
+            ("f" * 64,),
+        )
+    refresh_manifest(second[0], second[1])
+
+    report = verify_archive_chain(
+        [(first[0], first[1]), (second[0], second[1])],
+        journal_kind="evidence",
+        schema_version=1,
+        verify_segment=segment_verifier,
+    )
+    assert not report.valid
+    assert "checkpoint does not match manifest predecessor" in (report.error or "")
