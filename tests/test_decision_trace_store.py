@@ -809,6 +809,12 @@ def test_paired_backup_includes_committed_wal_state(
     try:
         assert evidence_wal.execute("PRAGMA journal_mode=WAL").fetchone()[0] == "wal"
         assert trace_wal.execute("PRAGMA journal_mode=WAL").fetchone()[0] == "wal"
+        # Hold read snapshots open so SQLite cannot checkpoint away the WAL
+        # pages while the independent store connections append committed rows.
+        evidence_wal.execute("BEGIN")
+        evidence_wal.execute("SELECT COUNT(*) FROM evidence_journal").fetchone()
+        trace_wal.execute("BEGIN")
+        trace_wal.execute("SELECT COUNT(*) FROM decision_trace_journal").fetchone()
 
         trace = make_trace(evidence_store, 911)
         trace_store.append(trace)
