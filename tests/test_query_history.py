@@ -16,7 +16,7 @@ def item(index: int) -> QueryHistoryItem:
     )
 
 
-def test_query_history_survives_restart_and_enforces_retention(tmp_path: Path) -> None:
+def test_query_history_survives_restart_with_explicit_retention(tmp_path: Path) -> None:
     path = tmp_path / "history.sqlite"
     first = SQLiteQueryHistoryStore(path, max_records=2)
     first.append(item(1))
@@ -35,7 +35,26 @@ def test_query_history_survives_restart_and_enforces_retention(tmp_path: Path) -
 def test_query_history_rejects_out_of_bound_history_limit(tmp_path: Path) -> None:
     store = SQLiteQueryHistoryStore(tmp_path / "history.sqlite", max_records=2)
     try:
-        with pytest.raises(ValueError, match="history limit"):
+        with pytest.raises(ValueError, match="retention bound"):
             store.list(limit=3)
     finally:
         store.close()
+
+
+def test_query_history_retains_all_records_by_default(tmp_path: Path) -> None:
+    store = SQLiteQueryHistoryStore(tmp_path / "unbounded-history.sqlite")
+    try:
+        for index in range(1, 1_002):
+            store.append(item(index))
+        records = store.list(limit=1_000)
+        assert len(records) == 1_000
+        assert records[0].evidence_id == "evidence-1001"
+        assert records[-1].evidence_id == "evidence-2"
+        assert store.max_records is None
+    finally:
+        store.close()
+
+
+def test_query_history_rejects_invalid_opt_in_retention(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="max_records"):
+        SQLiteQueryHistoryStore(tmp_path / "invalid-history.sqlite", max_records=0)
