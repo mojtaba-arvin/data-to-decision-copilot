@@ -83,6 +83,16 @@ def test_rest_api_serves_query_history_and_schema(catalog: Path, tmp_path: Path)
         assert payload["rows"] == [[2]]
         assert "parameters" not in payload
         assert isinstance(payload["parameter_count"], int)
+        with urlopen(base + "/health", timeout=5) as response:
+            assert json.loads(response.read())["status"] == "ok"
+        with urlopen(base + "/ready", timeout=5) as response:
+            readiness = json.loads(response.read())
+        assert readiness["status"] == "ready"
+        assert readiness["checks"] == {
+            "catalog": "ok",
+            "evidence_journal": "ok",
+            "decision_trace_journal": "ok",
+        }
         with urlopen(base + "/v1/history", timeout=5) as response:
             history = json.loads(response.read())
         assert history["items"][0]["evidence_id"] == payload["evidence_id"]
@@ -242,4 +252,28 @@ def test_local_rest_bearer_auth_rejects_missing_and_wrong_token(
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+        service.close()
+
+
+
+def test_readiness_fails_closed_when_evidence_journal_is_corrupt(
+    catalog: Path, tmp_path: Path
+) -> None:
+    import sqlite3
+
+    evidence_path = tmp_path / "corrupt-evidence.sqlite"
+    service = build_service(catalog_path=str(catalog), evidence_path=str(evidence_path))
+    try:
+        asyncio.run(service.query("count rows in orders"))
+        assert service.readiness()["status"] == "ready"
+        with sqlite3.connect(evidence_path) as connection:
+            connection.execute("DROP TRIGGER evidence_no_update")
+            connection.execute(
+                "UPDATE evidence_journal SET payload = '{}' WHERE sequence = 1"
+            )
+            connection.commit()
+        report = service.readiness()
+        assert report["status"] == "not_ready"
+        assert report["checks"]["evidence_journal"] == "integrity_failed"
+    finally:
         service.close()
