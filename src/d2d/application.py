@@ -94,9 +94,14 @@ class CopilotService:
 
         if not question.strip() or not evidence_id.strip():
             raise ValueError("question and evidence_id must not be empty")
+        history_limit = (
+            min(1_000, self._history_store.max_records)
+            if self._history_store.max_records is not None
+            else 1_000
+        )
         if not any(
             item.evidence_id == evidence_id and item.question == question
-            for item in self._history_store.list(limit=1_000)
+            for item in self._history_store.list(limit=history_limit)
         ):
             raise ValueError("evidence_id is not associated with this exact query in local history")
         try:
