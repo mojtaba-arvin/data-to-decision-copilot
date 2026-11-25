@@ -506,7 +506,7 @@ def test_restore_file_fsync_failure_does_not_publish_or_leave_staging(
 
 
 def test_restore_no_replace_publication_race_preserves_existing_destination(
-    tmp_path: Path, monkeypatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ):
     segments = _restore_segments_for_fault_test(tmp_path)
     destination = tmp_path / "restore-race.sqlite"
