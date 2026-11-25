@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 import duckdb
 import pytest
 
 import d2d.application as application
 from d2d.connectors.duckdb import DuckDBConnector
+from d2d.core.ollama_provider import OllamaStructuredPlanProvider
 from d2d.query_history import SQLiteQueryHistoryStore
 
 
@@ -57,10 +59,10 @@ def test_readiness_includes_the_configured_ollama_model(
     connection.execute("CREATE TABLE orders (id INTEGER)")
     connection.close()
 
-    monkeypatch.setattr(
-        "d2d.core.ollama_provider.OllamaStructuredPlanProvider.is_ready",
-        lambda self: False,
-    )
+    def unavailable(provider: OllamaStructuredPlanProvider) -> bool:
+        return False
+
+    monkeypatch.setattr(OllamaStructuredPlanProvider, "is_ready", unavailable)
     service = application.build_service(
         catalog_path=str(catalog),
         evidence_path=str(tmp_path / "evidence.sqlite"),
@@ -72,6 +74,7 @@ def test_readiness_includes_the_configured_ollama_model(
     try:
         report = service.readiness()
         assert report["status"] == "not_ready"
-        assert report["checks"]["model_provider"] == "unavailable"
+        checks = cast(dict[str, str], report["checks"])
+        assert checks["model_provider"] == "unavailable"
     finally:
         service.close()
