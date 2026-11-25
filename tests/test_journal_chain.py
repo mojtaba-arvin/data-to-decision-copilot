@@ -532,7 +532,7 @@ def test_restore_no_replace_publication_race_preserves_existing_destination(
 
 
 def test_restore_parent_directory_fsync_failure_keeps_published_verified_database(
-    tmp_path: Path, monkeypatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ):
     segments = _restore_segments_for_fault_test(tmp_path)
     destination = tmp_path / "restore-directory-fsync-failure.sqlite"
