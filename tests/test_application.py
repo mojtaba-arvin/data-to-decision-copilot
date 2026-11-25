@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 import duckdb
 import pytest
 
 import d2d.application as application
 from d2d.connectors.duckdb import DuckDBConnector
+from d2d.core.ollama_provider import OllamaStructuredPlanProvider
 from d2d.query_history import SQLiteQueryHistoryStore
 
 
@@ -69,3 +71,33 @@ def test_invalid_history_retention_fails_before_opening_persistent_stores(tmp_pa
     assert not evidence_path.exists()
     assert not history_path.exists()
     assert not (tmp_path / "traces.sqlite").exists()
+
+
+
+def test_readiness_includes_the_configured_ollama_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    catalog = tmp_path / "analytics.duckdb"
+    connection = duckdb.connect(str(catalog))
+    connection.execute("CREATE TABLE orders (id INTEGER)")
+    connection.close()
+
+    def unavailable(provider: OllamaStructuredPlanProvider) -> bool:
+        return False
+
+    monkeypatch.setattr(OllamaStructuredPlanProvider, "is_ready", unavailable)
+    service = application.build_service(
+        catalog_path=str(catalog),
+        evidence_path=str(tmp_path / "evidence.sqlite"),
+        history_path=str(tmp_path / "history.sqlite"),
+        trace_path=str(tmp_path / "traces.sqlite"),
+        provider="ollama",
+        model="qwen3:8b",
+    )
+    try:
+        report = service.readiness()
+        assert report["status"] == "not_ready"
+        checks = cast(dict[str, str], report["checks"])
+        assert checks["model_provider"] == "unavailable"
+    finally:
+        service.close()
