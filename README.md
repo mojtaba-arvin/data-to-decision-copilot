@@ -77,6 +77,24 @@ d2d serve --catalog ./analytics.duckdb --host 127.0.0.1 --port 8765
 d2d mcp --catalog ./analytics.duckdb
 ```
 
+
+Before starting or during operation, inspect the filesystems that hold the catalog and
+SQLite stores with the read-only operator diagnostic:
+
+```bash
+d2d doctor --catalog ./analytics.duckdb \
+  --evidence-db ./d2d-evidence.sqlite \
+  --history-db ./d2d-history.sqlite \
+  --trace-db ./d2d-traces.sqlite
+```
+
+The command reports total/free bytes and free-space percentage for each data path.
+It exits non-zero when any filesystem is at or below the critical threshold (5% by
+default) or cannot be inspected; the warning threshold is 15%. Thresholds can be
+overridden with `--critical-free-percent` and `--warning-free-percent`. This is an
+on-demand diagnostic, not a background alerting service, reservation guarantee, or
+automatic cleanup mechanism. It never deletes or modifies application data.
+
 The REST API exposes `GET /health`, `GET /v1/schema`, `GET /v1/history`,
 `GET /v1/traces`, `GET /v1/traces/{trace_id}`, and `POST /v1/query`.
 `POST /v1/decision` accepts a caller-authored proposal tied to the evidence ID
