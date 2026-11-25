@@ -46,3 +46,26 @@ def test_build_service_closes_partial_resources_when_trace_store_fails(
         )
 
     assert closed == ["history", "catalog"]
+
+
+
+def test_invalid_history_retention_fails_before_opening_persistent_stores(tmp_path: Path) -> None:
+    catalog = tmp_path / "analytics.duckdb"
+    connection = duckdb.connect(str(catalog))
+    connection.execute("CREATE TABLE orders (id INTEGER)")
+    connection.close()
+    evidence_path = tmp_path / "evidence.sqlite"
+    history_path = tmp_path / "history.sqlite"
+
+    with pytest.raises(ValueError, match="history_max_records"):
+        application.build_service(
+            catalog_path=str(catalog),
+            evidence_path=str(evidence_path),
+            history_path=str(history_path),
+            trace_path=str(tmp_path / "traces.sqlite"),
+            history_max_records=0,
+        )
+
+    assert not evidence_path.exists()
+    assert not history_path.exists()
+    assert not (tmp_path / "traces.sqlite").exists()
