@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import socket
 import threading
 from io import StringIO
 from pathlib import Path
@@ -278,5 +279,39 @@ def test_readiness_fails_closed_when_evidence_journal_is_unavailable(
                 "decision_trace_journal": "ok",
             },
         }
+    finally:
+        service.close()
+
+
+def test_rest_server_closes_idle_incomplete_request_after_socket_timeout(
+    catalog: Path, tmp_path: Path
+) -> None:
+    service = build_service(
+        catalog_path=str(catalog), evidence_path=str(tmp_path / "socket-timeout.sqlite")
+    )
+    server = create_server(service, port=0, request_socket_timeout_seconds=1)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with socket.create_connection(server.server_address, timeout=3) as client:
+            client.sendall(b"GET /health HTTP/1.1\\r\\nHost: localhost\\r\\n")
+            client.settimeout(3)
+            assert client.recv(1) == b""
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+        service.close()
+
+
+def test_rest_server_validates_socket_timeout_bounds(catalog: Path, tmp_path: Path) -> None:
+    service = build_service(
+        catalog_path=str(catalog), evidence_path=str(tmp_path / "socket-timeout-bounds.sqlite")
+    )
+    try:
+        with pytest.raises(ValueError, match="request_socket_timeout_seconds"):
+            create_server(service, request_socket_timeout_seconds=0)
+        with pytest.raises(ValueError, match="request_socket_timeout_seconds"):
+            create_server(service, request_socket_timeout_seconds=121)
     finally:
         service.close()
