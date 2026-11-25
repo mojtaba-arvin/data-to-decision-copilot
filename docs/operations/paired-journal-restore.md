@@ -92,8 +92,9 @@ If this occurs:
 
 1. Do not immediately retry into the same destination; it already exists.
 2. Keep the destination and source archives intact.
-3. Re-run the restore verifier against the published directory using a
-   separate verification procedure, and inspect filesystem/host storage health.
+3. Have an operator independently verify both restored journals and their
+   cross-journal references before using the destination; also inspect
+   filesystem/host storage health.
 4. Treat the restore as unconfirmed until the directory and its parent have
    been durably synced or a fresh restore to another destination completes.
 
