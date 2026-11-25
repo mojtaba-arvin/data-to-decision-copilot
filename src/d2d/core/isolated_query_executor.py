@@ -20,6 +20,8 @@ from d2d.core.sql_executor import (
     ExecutionLimits,
     QueryExecutionError,
     QueryResult,
+    QueryTimeoutError,
+    QueryWorkerError,
 )
 
 
@@ -103,7 +105,7 @@ class IsolatedDuckDBQueryExecutor:
             )
         except TimeoutError as exc:
             await self._terminate(process)
-            raise QueryExecutionError(
+            raise QueryTimeoutError(
                 f"isolated DuckDB worker exceeded {timeout:g}s wall-clock limit"
             ) from exc
         except asyncio.CancelledError:
@@ -114,23 +116,23 @@ class IsolatedDuckDBQueryExecutor:
             raise QueryExecutionError("isolated worker response exceeded IPC limit")
         if process.returncode != 0:
             detail = stderr.decode("utf-8", errors="replace")[:2048]
-            raise QueryExecutionError(
+            raise QueryWorkerError(
                 f"isolated DuckDB worker exited with status {process.returncode}: {detail}"
             )
         try:
             parsed: Any = json.loads(stdout)
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             detail = stderr.decode("utf-8", errors="replace")[:512]
-            raise QueryExecutionError(
+            raise QueryWorkerError(
                 f"isolated DuckDB worker returned malformed IPC: {detail}"
             ) from exc
         if not isinstance(parsed, dict):
-            raise QueryExecutionError("WorkerProtocolError: response must be an object")
+            raise QueryWorkerError("WorkerProtocolError: response must be an object")
         response = cast(dict[str, Any], parsed)
         if not response.get("ok"):
             error_type = str(response.get("error_type", "WorkerError"))
             message = str(response.get("error", "worker failed"))
-            raise QueryExecutionError(f"{error_type}: {message}")
+            raise QueryWorkerError(f"{error_type}: {message}")
 
         try:
             columns_raw = response["columns"]
@@ -143,14 +145,14 @@ class IsolatedDuckDBQueryExecutor:
             output_bytes = int(response["output_bytes"])
             truncated = bool(response["truncated"])
         except (KeyError, TypeError, ValueError) as exc:
-            raise QueryExecutionError("isolated worker response schema is invalid") from exc
+            raise QueryWorkerError("isolated worker response schema is invalid") from exc
         if (
             captured_rows != len(rows)
             or captured_rows > self._limits.max_rows
             or output_bytes > self._limits.max_bytes
             or output_bytes < 0
         ):
-            raise QueryExecutionError("isolated worker violated output limits")
+            raise QueryWorkerError("isolated worker violated output limits")
         return QueryResult(
             columns=columns,
             rows=rows,
