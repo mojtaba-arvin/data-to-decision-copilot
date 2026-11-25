@@ -40,3 +40,11 @@ journal rotation or retention. Rotation remains disabled until crash injection
 covers every durable transition, concurrent append/WAL behavior is proven, and
 recovery is idempotent. Retention remains disabled until redundant archive-copy
 verification and auditable deletion policy are implemented.
+
+
+PR #64 adds `d2d journal backup` and `d2d journal restore`. These commands
+publish the paired Evidence/DecisionTrace directories atomically and fail
+closed on overwrite or unsupported no-replace directory publication. They do
+not rotate active journals or advance checkpoints. The backup covers only the
+two journals, not catalogs, query history, configuration, secrets, or model
+artifacts. The archive manifests remain unsigned.
