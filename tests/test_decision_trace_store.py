@@ -755,3 +755,39 @@ def test_paired_backup_rejects_cross_snapshot_evidence_reference_skew(
     assert evidence_store.verify().valid
     assert SQLiteDecisionTraceStore(trace_path).verify().valid
     assert SQLiteEvidenceStore(evidence_path).count() == 1
+
+
+
+@pytest.mark.parametrize("failure", ["disk_full", "publish"])
+def test_paired_backup_does_not_publish_after_durability_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+):
+    evidence_path = tmp_path / "failure-evidence.sqlite"
+    trace_path = tmp_path / "failure-traces.sqlite"
+    evidence_store = SQLiteEvidenceStore(evidence_path)
+    trace_store = SQLiteDecisionTraceStore(trace_path)
+    trace_store.append(make_trace(evidence_store, 910))
+    destination = tmp_path / "unpublished-backup"
+
+    if failure == "disk_full":
+        def fail_fsync(path: Path) -> None:
+            raise OSError(28, "injected disk full")
+
+        monkeypatch.setattr(journal_restore, "_fsync_file", fail_fsync)
+    else:
+        def fail_publish(source: Path, target: Path) -> None:
+            raise PermissionError("injected atomic publication failure")
+
+        monkeypatch.setattr(journal_restore, "_rename_directory_no_replace", fail_publish)
+
+    with pytest.raises(OSError):
+        journal_restore.backup_paired_journals(
+            evidence_path, trace_path, destination
+        )
+
+    assert not destination.exists()
+    assert list(tmp_path.glob(".unpublished-backup.backup-*")) == []
+    assert evidence_store.verify().valid
+    assert trace_store.verify(evidence_store=evidence_store).valid
