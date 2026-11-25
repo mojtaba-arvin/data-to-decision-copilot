@@ -121,9 +121,9 @@ autonomous decision generation.
 
 ### Backup, restore, and upgrades
 
-- [ ] A backup is restored into a fresh destination in a repeatable drill.
-- [ ] The restored evidence and decision-trace journals independently verify
-  and historical trace replay succeeds against the restored evidence store.
+- [x] A paired journal backup is restored into a fresh destination in a repeatable drill (PR #64).
+- [x] The restored evidence and decision-trace journals independently verify
+  and historical trace replay succeeds against the restored evidence store (PRs #63–64).
 - [ ] Upgrade tests cover databases created by the previous supported release.
 - [ ] Offline installation is verified on each published OS/architecture/Python
   combination, including required native dependencies.
