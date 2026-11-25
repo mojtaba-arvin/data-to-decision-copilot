@@ -337,10 +337,12 @@ def test_rest_request_logs_are_structured_and_exclude_question_payload(
         method="POST",
     )
     try:
-        with caplog.at_level(logging.INFO, logger="d2d.api"):
-            with urlopen(request, timeout=5) as response:
-                assert response.status == 200
-                response.read()
+        with (
+            caplog.at_level(logging.INFO, logger="d2d.api"),
+            urlopen(request, timeout=5) as response,
+        ):
+            assert response.status == 200
+            response.read()
         messages = [
             record.getMessage()
             for record in caplog.records
