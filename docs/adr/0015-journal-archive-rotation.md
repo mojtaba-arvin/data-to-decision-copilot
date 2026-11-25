@@ -60,3 +60,14 @@ backup must fail closed and leave the destination unpublished. This validates
 cross-snapshot referential consistency, not a globally atomic point-in-time
 snapshot across two independent SQLite databases. Operators must quiesce writes
 when they require a single business-time cut across both journals.
+
+
+## Fault-injection progress (PRs #67–#69)
+
+The paired operator backup now has regression coverage for selected failure windows:
+
+- If a DecisionTrace added after the Evidence snapshot references an Evidence row absent from that snapshot, paired backup fails closed and publishes no pair (PR #67).
+- If final artifact fsync reports ENOSPC, or atomic no-replace directory publication fails, no destination or staging directory is left behind and both live journals remain verifiable (PR #68).
+- A paired online backup captures committed Evidence and DecisionTrace pages in WAL mode while independent read transactions remain open; the restored pair verifies and historical trace replay succeeds (PR #69).
+
+These tests do not establish a globally atomic point-in-time snapshot across two independent SQLite databases. Operators requiring one business-time cut must quiesce writes. They also do not complete process/power-loss injection at every durability boundary, concurrent-writer stress during backup/rotation, lock-contention testing, checkpoint transition recovery, or idempotent rotation. Rotation and retention remain disabled.
