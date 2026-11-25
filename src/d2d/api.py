@@ -68,6 +68,10 @@ def create_server(
                 return
             if self.path == "/health":
                 self._send(200, {"status": "ok"})
+            elif self.path == "/ready":
+                report = service.readiness()
+                status = 200 if report["status"] == "ready" else 503
+                self._send(status, report)
             elif self.path == "/v1/schema":
                 self._send(200, service.schema())
             elif self.path == "/v1/history":

@@ -192,6 +192,33 @@ class CopilotService:
             return None
         return trace.model_dump(mode="json")
 
+    def readiness(self) -> dict[str, object]:
+        """Report whether the catalog and durable journals can serve requests.
+
+        This is a lightweight dependency check, distinct from process liveness.
+        It deliberately avoids full hash-chain scans on every probe; integrity
+        verification belongs in explicit audit, backup, and restore operations.
+        Details are categorical and do not expose paths or payloads.
+        """
+        checks: dict[str, str] = {}
+        try:
+            self._source.snapshot()
+            checks["catalog"] = "ok"
+        except Exception:
+            checks["catalog"] = "unavailable"
+        try:
+            self._evidence_store.count()
+            checks["evidence_journal"] = "ok"
+        except Exception:
+            checks["evidence_journal"] = "unavailable"
+        try:
+            self._trace_store.count()
+            checks["decision_trace_journal"] = "ok"
+        except Exception:
+            checks["decision_trace_journal"] = "unavailable"
+        ready = all(value == "ok" for value in checks.values())
+        return {"status": "ready" if ready else "not_ready", "checks": checks}
+
     def close(self) -> None:
         """Close the owned DuckDB catalog connection."""
         if isinstance(self._source, DuckDBConnector):
