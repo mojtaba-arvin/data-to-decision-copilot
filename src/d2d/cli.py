@@ -109,7 +109,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         serve_thread.join(timeout=5.0)
                     drained = (
                         not serve_thread.is_alive()
-                        and server.wait_for_idle(args.shutdown_drain_timeout_seconds)
+                        and server.wait_for_idle(args.shutdown_drain_warning_seconds)
                     )
                     server.server_close()
                     if not drained:
