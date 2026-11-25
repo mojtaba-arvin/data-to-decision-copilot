@@ -12,7 +12,8 @@ from d2d.core.decision_trace import create_decision_trace
 from d2d.core.decision_trace_store import SQLiteDecisionTraceStore
 from d2d.core.evidence import create_execution_evidence
 from d2d.core.evidence_store import SQLiteEvidenceStore
-from d2d.core.journal_chain import GENESIS, restore_archive_chain
+from d2d.core.journal_chain import GENESIS
+from d2d.core.journal_restore import restore_paired_journals
 from d2d.core.sql_executor import QueryResult
 
 
@@ -595,28 +596,18 @@ def test_restores_paired_journals_and_replays_traces_against_restored_evidence(
         )
 
     restored_directory = tmp_path / "restored-pair"
-    restored_directory.mkdir()
+    report = restore_paired_journals(
+        evidence_archive,
+        trace_archive,
+        restored_directory,
+    )
     restored_evidence_path = restored_directory / "evidence.sqlite"
-    restored_trace_path = restored_directory / "traces.sqlite"
-    evidence_report = restore_archive_chain(
-        [(evidence_one, evidence_one_manifest), (evidence_two, evidence_two_manifest)],
-        restored_evidence_path,
-        journal_kind="evidence",
-        schema_version=1,
-        verify_segment=verify_evidence_segment,
-    )
-    trace_report = restore_archive_chain(
-        [(trace_one, trace_one_manifest), (trace_two, trace_two_manifest)],
-        restored_trace_path,
-        journal_kind="decision_trace",
-        schema_version=1,
-        verify_segment=verify_trace_segment,
-    )
-
+    restored_trace_path = restored_directory / "decision-traces.sqlite"
     restored_evidence = SQLiteEvidenceStore(restored_evidence_path)
     restored_traces = SQLiteDecisionTraceStore(restored_trace_path)
-    assert evidence_report.records_restored == 4
-    assert trace_report.records_restored == 4
+    assert report.evidence_records_restored == 4
+    assert report.trace_records_restored == 4
+    assert report.traces_evidence_checked == 4
     verification = restored_traces.verify(
         evidence_store=restored_evidence,
         expected_schema_fingerprints={"warehouse": "a" * 64},
@@ -624,6 +615,8 @@ def test_restores_paired_journals_and_replays_traces_against_restored_evidence(
     assert verification.valid
     assert verification.records_checked == 4
     assert verification.evidence_checked == 4
+    with pytest.raises(FileExistsError):
+        restore_paired_journals(evidence_archive, trace_archive, restored_directory)
     for trace in first_trace_records + second_trace_records:
         assert restored_traces.replay(
             trace.trace_id,
