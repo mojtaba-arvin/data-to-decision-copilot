@@ -43,8 +43,8 @@ def _parser() -> argparse.ArgumentParser:
             command.add_argument("--host", default="127.0.0.1")
             command.add_argument("--port", type=int, default=8765)
             command.add_argument(
-                "--shutdown-drain-timeout-seconds", type=float, default=10.0,
-                help="Maximum time to drain active REST requests after shutdown",
+                "--shutdown-drain-warning-seconds", type=float, default=10.0,
+                help="Time before warning that active REST requests are still draining",
             )
             command.add_argument(
                 "--bearer-token-env", default="D2D_REST_BEARER_TOKEN",
@@ -70,7 +70,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         model=args.model,
         isolated_worker=args.isolated_worker,
     )
-    close_service_on_exit = True
     try:
         if args.command == "query":
             result = asyncio.run(service.query(args.question))
@@ -83,8 +82,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             run_stdio(service)
             return 0
         if args.command == "serve":
-            if not 0.0 <= args.shutdown_drain_timeout_seconds <= 300.0:
-                raise ValueError("shutdown drain timeout must be between 0 and 300 seconds")
+            if not 0.0 <= args.shutdown_drain_warning_seconds <= 300.0:
+                raise ValueError("shutdown drain warning must be between 0 and 300 seconds")
             server = create_server(
                 service, host=args.host, port=args.port,
                 bearer_token=os.environ.get(args.bearer_token_env),
@@ -126,8 +125,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     signal.signal(signal.SIGTERM, previous_sigterm)
             return 0 if drained else 1
     finally:
-        if close_service_on_exit:
-            service.close()
+        service.close()
     return 2
 
 
