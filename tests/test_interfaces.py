@@ -273,7 +273,13 @@ def test_readiness_fails_closed_when_evidence_journal_is_corrupt(
             )
             connection.commit()
         report = service.readiness()
-        assert report["status"] == "not_ready"
-        assert report["checks"]["evidence_journal"] == "integrity_failed"
+        assert report == {
+            "status": "not_ready",
+            "checks": {
+                "catalog": "ok",
+                "evidence_journal": "integrity_failed",
+                "decision_trace_journal": "ok",
+            },
+        }
     finally:
         service.close()
