@@ -64,13 +64,19 @@ class OllamaStructuredPlanProvider(StructuredPlanProvider):
             return False
         if not isinstance(parsed, dict):
             return False
-        models = parsed.get("models")
-        if not isinstance(models, list):
+        decoded = cast(dict[str, object], parsed)
+        models_raw = decoded.get("models")
+        if not isinstance(models_raw, list):
             return False
-        return any(
-            isinstance(model, dict) and model.get("name") == self.model
-            for model in models
-        )
+        models = cast(list[object], models_raw)
+
+        def matches_configured_model(item: object) -> bool:
+            if not isinstance(item, dict):
+                return False
+            model_info = cast(dict[str, object], item)
+            return model_info.get("name") == self.model
+
+        return any(matches_configured_model(item) for item in models)
 
     def generate(self, request: StructuredGenerationRequest) -> str:
         """Generate one JSON response, with strict local-network and size bounds."""
