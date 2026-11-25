@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import asyncio
+import errno
 import ipaddress
 import json
 import logging
 import secrets
 import socket
+import sqlite3
 import ssl
 import time
 from datetime import UTC, datetime
@@ -16,6 +18,7 @@ from typing import Any, cast
 from urllib.parse import unquote
 
 from d2d.application import CopilotService
+from d2d.core.sql_executor import QueryExecutionError, QueryTimeoutError, QueryWorkerError
 
 _MAX_BODY_BYTES = 8_192
 _logger = logging.getLogger(__name__)
@@ -149,6 +152,38 @@ def create_server(
             }, separators=(",", ":")))
             self.wfile.write(body)
 
+        def _send_request_failure(self, exc: Exception) -> None:
+            if isinstance(exc, QueryTimeoutError):
+                status, code = 504, "query_timeout"
+            elif isinstance(exc, QueryWorkerError):
+                status, code = 503, "query_worker_unavailable"
+            elif isinstance(exc, QueryExecutionError):
+                status, code = 422, "query_execution_failed"
+            elif isinstance(exc, sqlite3.OperationalError):
+                message = str(exc).lower()
+                if "locked" in message or "busy" in message:
+                    status, code = 503, "storage_busy"
+                elif "full" in message or "disk i/o" in message or "readonly" in message:
+                    status, code = 507, "storage_unavailable"
+                else:
+                    status, code = 503, "storage_unavailable"
+            elif isinstance(exc, sqlite3.DatabaseError):
+                status, code = 503, "storage_unavailable"
+            elif isinstance(exc, OSError) and exc.errno == errno.ENOSPC:
+                status, code = 507, "storage_unavailable"
+            elif isinstance(exc, OSError) and exc.errno in (errno.EACCES, errno.EROFS):
+                status, code = 503, "storage_unavailable"
+            else:
+                status, code = 500, "request_failed"
+            _logger.error(json.dumps({
+                "timestamp": datetime.now(UTC).isoformat(),
+                "event": "request_failure",
+                "route": getattr(self, "_route_label", "/unknown"),
+                "status": status,
+                "error_code": code,
+            }, separators=(",", ":")))
+            self._send(status, {"error": code})
+
         def _authorized(self) -> bool:
             if bearer_token is None:
                 return True
@@ -257,8 +292,8 @@ def create_server(
                         ))
                 except ValueError:
                     self._send(422, {"error": "request_rejected_by_validation_or_policy"})
-                except Exception:
-                    self._send(500, {"error": "request_failed"})
+                except Exception as exc:
+                    self._send_request_failure(exc)
             finally:
                 query_slots.release()
 
