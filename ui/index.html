@@ -70,7 +70,7 @@ const translations = {
     action: 'Proposed action', rationale: 'Rationale', claim: 'Evidence-backed claim',
     alternative: 'Alternative action', tradeoff: 'Alternative trade-off',
     reversal: 'Condition that would reverse this decision', saveDecision: 'Verify and save decision',
-    decisionInitial: 'Run a query before submitting a proposal.', history: 'Recent questions',
+    decisionInitial: 'Run a query before submitting a proposal.', history: 'Recent questions', noHistory: 'No history yet.',
     traces: 'DecisionTrace history', noTraces: 'No persisted DecisionTrace records. Query execution alone does not generate a decision.',
     traceUnavailable: 'DecisionTrace journal unavailable or failed integrity verification.',
     traceDetail: 'DecisionTrace details will appear here when a decision has been produced and persisted.',
@@ -95,7 +95,7 @@ const translations = {
     action: 'اقدام پیشنهادی', rationale: 'دلیل تصمیم', claim: 'ادعای مبتنی بر شواهد',
     alternative: 'اقدام جایگزین', tradeoff: 'هزینه یا پیامد اقدام جایگزین',
     reversal: 'شرطی که باعث بازنگری این تصمیم می‌شود', saveDecision: 'بررسی و ذخیره تصمیم',
-    decisionInitial: 'برای ثبت پیشنهاد ابتدا یک پرس‌وجو اجرا کنید.', history: 'پرس‌وجوهای اخیر',
+    decisionInitial: 'برای ثبت پیشنهاد ابتدا یک پرس‌وجو اجرا کنید.', history: 'پرس‌وجوهای اخیر', noHistory: 'هنوز سابقه‌ای ثبت نشده است.',
     traces: 'تاریخچه DecisionTrace', noTraces: 'هنوز DecisionTrace ذخیره‌شده‌ای وجود ندارد. اجرای پرس‌وجو به‌تنهایی تصمیم تولید نمی‌کند.',
     traceUnavailable: 'دفتر DecisionTrace در دسترس نیست یا اعتبارسنجی یکپارچگی آن ناموفق بوده است.',
     traceDetail: 'پس از تولید و ذخیره تصمیم، جزئیات DecisionTrace در این قسمت نمایش داده می‌شود.',
@@ -114,6 +114,7 @@ const translations = {
 };
 const tr = (key) => translations[language][key];
 function applyLanguage() {
+  document.title = tr('title');
   document.documentElement.lang = language;
   document.documentElement.dir = language === 'fa' ? 'rtl' : 'ltr';
   $('language-toggle').textContent = tr('toggle');
@@ -135,6 +136,10 @@ function applyLanguage() {
   $('decision-submit').textContent = tr('saveDecision');
   $('history-title').textContent = tr('history');
   $('traces-title').textContent = tr('traces');
+  if (!lastQuery) {
+    $('result').textContent = tr('noQuery');
+    $('trace').textContent = tr('traceDetail');
+  }
   if (apiStatusKey) $('status').textContent = tr(apiStatusKey);
   if (messageKey) $('message').textContent = tr(messageKey);
   if (decisionMessageKey) $('decision-message').textContent = tr(decisionMessageKey);
@@ -155,7 +160,13 @@ async function refresh() {
   } catch { apiStatusKey = 'unavailable'; $('status').textContent = tr(apiStatusKey); }
   try {
     const r = await fetch('/v1/history'); const data = await r.json();
-    $('history').innerHTML = '';
+    $('history').replaceChildren();
+    if (!(data.items || []).length) {
+      const empty = document.createElement('li');
+      empty.className = 'muted';
+      empty.textContent = tr('noHistory');
+      $('history').append(empty);
+    }
     for (const item of data.items || []) {
       const li = document.createElement('li');
       const button = document.createElement('button'); button.textContent = item.question;
@@ -183,7 +194,7 @@ async function refresh() {
         const payload = await detail.json();
         $('decision-trace-detail').textContent = detail.ok
           ? JSON.stringify(payload, null, 2)
-          : 'Trace verification failed: ' + (payload.error || detail.status);
+          : tr('traceVerificationFailed');
       });
       li.append(button);
       $('decision-traces').append(li);
@@ -194,7 +205,9 @@ async function refresh() {
 }
 let lastQuery = null;
 $('query-form').addEventListener('submit', async (event) => {
-  event.preventDefault(); lastQuery = null; $('decision-section').hidden = true; $('submit').disabled = true; messageKey = 'executing'; $('message').textContent = tr(messageKey);
+  event.preventDefault(); lastQuery = null; $('decision-section').hidden = true; $('submit').disabled = true;
+  messageKey = 'executing'; $('message').textContent = tr(messageKey); $('message').className = 'muted';
+  $('result').textContent = tr('noQuery'); $('trace').textContent = tr('traceDetail');
   try {
     const response = await fetch('/v1/query', {
       method: 'POST', headers: {'Content-Type':'application/json'},
@@ -228,6 +241,7 @@ $('decision-form').addEventListener('submit', async (event) => {
   if (!lastQuery) { decisionMessageKey = 'runFirst'; $('decision-message').textContent = tr(decisionMessageKey); return; }
   $('decision-submit').disabled = true;
   decisionMessageKey = 'decisionVerifying'; $('decision-message').textContent = tr(decisionMessageKey);
+  $('decision-message').className = 'muted';
   try {
     const response = await fetch('/v1/decision', {
       method: 'POST', headers: {'Content-Type':'application/json'},
