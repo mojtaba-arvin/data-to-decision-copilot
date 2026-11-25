@@ -791,3 +791,62 @@ def test_paired_backup_does_not_publish_after_durability_failure(
     assert list(tmp_path.glob(".unpublished-backup.backup-*")) == []
     assert evidence_store.verify().valid
     assert trace_store.verify(evidence_store=evidence_store).valid
+
+
+
+def test_paired_backup_includes_committed_wal_state(
+    tmp_path: Path,
+):
+    evidence_path = tmp_path / "wal-evidence.sqlite"
+    trace_path = tmp_path / "wal-traces.sqlite"
+    evidence_store = SQLiteEvidenceStore(evidence_path)
+    trace_store = SQLiteDecisionTraceStore(trace_path)
+
+    # Keep a connection open so committed writes remain in WAL sidecars while
+    # the paired backup runs; the online backup API must include those commits.
+    evidence_wal = sqlite3.connect(evidence_path)
+    trace_wal = sqlite3.connect(trace_path)
+    try:
+        assert evidence_wal.execute("PRAGMA journal_mode=WAL").fetchone()[0] == "wal"
+        assert trace_wal.execute("PRAGMA journal_mode=WAL").fetchone()[0] == "wal"
+        # Hold read snapshots open so SQLite cannot checkpoint away the WAL
+        # pages while the independent store connections append committed rows.
+        evidence_wal.execute("BEGIN")
+        evidence_wal.execute("SELECT COUNT(*) FROM evidence_journal").fetchone()
+        trace_wal.execute("BEGIN")
+        trace_wal.execute("SELECT COUNT(*) FROM decision_trace_journal").fetchone()
+
+        trace = make_trace(evidence_store, 911)
+        trace_store.append(trace)
+        evidence_sidecar = Path(f"{evidence_path}-wal")
+        trace_sidecar = Path(f"{trace_path}-wal")
+        assert evidence_sidecar.is_file() and evidence_sidecar.stat().st_size > 0
+        assert trace_sidecar.is_file() and trace_sidecar.stat().st_size > 0
+
+        archive = tmp_path / "wal-backup"
+        report = journal_restore.backup_paired_journals(
+            evidence_path, trace_path, archive
+        )
+        assert report.evidence_records == 1
+        assert report.trace_records == 1
+        assert report.traces_evidence_checked == 1
+
+        restored_directory = tmp_path / "wal-restored"
+        restored = restore_paired_journals(
+            archive / "evidence", archive / "traces", restored_directory
+        )
+        restored_evidence = SQLiteEvidenceStore(
+            restored_directory / "evidence.sqlite"
+        )
+        restored_traces = SQLiteDecisionTraceStore(
+            restored_directory / "decision-traces.sqlite"
+        )
+        assert restored.evidence_records_restored == 1
+        assert restored.trace_records_restored == 1
+        assert restored.traces_evidence_checked == 1
+        assert restored_traces.replay(
+            trace.trace_id, evidence_store=restored_evidence
+        ) == trace
+    finally:
+        evidence_wal.close()
+        trace_wal.close()
