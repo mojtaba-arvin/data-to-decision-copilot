@@ -256,28 +256,25 @@ def test_local_rest_bearer_auth_rejects_missing_and_wrong_token(
 
 
 
-def test_readiness_fails_closed_when_evidence_journal_is_corrupt(
+def test_readiness_fails_closed_when_evidence_journal_is_unavailable(
     catalog: Path, tmp_path: Path
 ) -> None:
     import sqlite3
 
-    evidence_path = tmp_path / "corrupt-evidence.sqlite"
+    evidence_path = tmp_path / "unavailable-evidence.sqlite"
     service = build_service(catalog_path=str(catalog), evidence_path=str(evidence_path))
     try:
         asyncio.run(service.query("count rows in orders"))
         assert service.readiness()["status"] == "ready"
         with sqlite3.connect(evidence_path) as connection:
-            connection.execute("DROP TRIGGER evidence_no_update")
-            connection.execute(
-                "UPDATE evidence_journal SET payload = '{}' WHERE sequence = 1"
-            )
+            connection.execute("DROP TABLE evidence_journal")
             connection.commit()
         report = service.readiness()
         assert report == {
             "status": "not_ready",
             "checks": {
                 "catalog": "ok",
-                "evidence_journal": "integrity_failed",
+                "evidence_journal": "unavailable",
                 "decision_trace_journal": "ok",
             },
         }
