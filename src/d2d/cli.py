@@ -12,7 +12,7 @@ from pathlib import Path
 from d2d.api import create_server
 from d2d.application import build_service
 from d2d.demo import create_demo_catalog
-from d2d.core.journal_restore import restore_paired_journals
+from d2d.core.journal_restore import backup_paired_journals, restore_paired_journals
 from d2d.mcp import run_stdio
 
 
@@ -23,6 +23,13 @@ def _parser() -> argparse.ArgumentParser:
         "journal", help="Verify and restore paired Evidence and DecisionTrace archives"
     )
     journal_subparsers = journal.add_subparsers(dest="journal_action", required=True)
+    backup = journal_subparsers.add_parser(
+        "backup", help="Create verified snapshots of both active journals"
+    )
+    backup.add_argument("--evidence-db", type=Path, default=Path("d2d-evidence.sqlite"))
+    backup.add_argument("--trace-db", type=Path, default=Path("d2d-traces.sqlite"))
+    backup.add_argument("--output", type=Path, required=True)
+
     restore = journal_subparsers.add_parser(
         "restore", help="Restore both journal chains into one fresh directory"
     )
@@ -68,11 +75,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"Created synthetic demo catalog: {destination}")
         return 0
     if args.command == "journal":
-        report = restore_paired_journals(
-            args.evidence_archive,
-            args.trace_archive,
-            args.output,
-        )
+        if args.journal_action == "backup":
+            report = backup_paired_journals(
+                args.evidence_db,
+                args.trace_db,
+                args.output,
+            )
+        else:
+            report = restore_paired_journals(
+                args.evidence_archive,
+                args.trace_archive,
+                args.output,
+            )
         print(json.dumps(asdict(report), ensure_ascii=False, indent=2))
         return 0
 
