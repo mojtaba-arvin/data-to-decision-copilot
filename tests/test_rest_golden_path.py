@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import threading
+from typing import Any
 from pathlib import Path
 from urllib.request import Request, urlopen
 
@@ -11,12 +12,12 @@ from d2d.api import create_server
 from d2d.application import build_service
 
 
-def _get_json(url: str) -> dict[str, object]:
+def _get_json(url: str) -> Any:
     with urlopen(url, timeout=5) as response:
         return json.loads(response.read())
 
 
-def _post_json(url: str, payload: dict[str, object]) -> dict[str, object]:
+def _post_json(url: str, payload: dict[str, object]) -> Any:
     request = Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
