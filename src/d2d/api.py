@@ -5,10 +5,11 @@ import asyncio
 import ipaddress
 import json
 import secrets
+import socket
 import ssl
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import BoundedSemaphore
-from typing import cast
+from typing import Any, cast
 from urllib.parse import unquote
 
 from d2d.application import CopilotService
@@ -19,6 +20,7 @@ _MAX_BODY_BYTES = 8_192
 def create_server(
     service: CopilotService, *, host: str = "127.0.0.1", port: int = 8765,
     max_concurrent_queries: int = 4,
+    request_socket_timeout_seconds: float = 10.0,
     bearer_token: str | None = None,
     tls_certfile: str | None = None,
     tls_keyfile: str | None = None,
@@ -26,6 +28,8 @@ def create_server(
     """Create a loopback server or a TLS-protected bearer-authenticated remote server."""
     if not 1 <= max_concurrent_queries <= 32:
         raise ValueError("max_concurrent_queries must be between 1 and 32")
+    if not 1.0 <= request_socket_timeout_seconds <= 120.0:
+        raise ValueError("request_socket_timeout_seconds must be between 1 and 120")
     try:
         is_loopback = host.lower() == "localhost" or ipaddress.ip_address(host).is_loopback
     except ValueError as exc:
@@ -168,7 +172,15 @@ def create_server(
             return
 
     handler: type[BaseHTTPRequestHandler] = Handler
-    server = ThreadingHTTPServer((host, port), handler)
+
+    class BoundedRequestThreadingHTTPServer(ThreadingHTTPServer):
+        def get_request(self) -> tuple[socket.socket, Any]:
+            connection, address = super().get_request()
+            # This bounds idle socket reads/writes, not total query execution time.
+            connection.settimeout(request_socket_timeout_seconds)
+            return connection, address
+
+    server = BoundedRequestThreadingHTTPServer((host, port), handler)
     if tls_certfile is not None and tls_keyfile is not None:
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         context.minimum_version = ssl.TLSVersion.TLSv1_2
