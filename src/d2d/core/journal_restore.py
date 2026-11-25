@@ -329,7 +329,7 @@ def _write_genesis_segment_manifest(
             separators=(",", ":"),
             allow_nan=False,
         ).encode("utf-8")
-        + b"\\n"
+        + b"\n"
     )
     _fsync_file(manifest)
 
