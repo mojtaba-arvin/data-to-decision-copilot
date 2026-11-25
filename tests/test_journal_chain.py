@@ -6,6 +6,8 @@ import os
 import sqlite3
 import stat
 from pathlib import Path
+
+import pytest
 from typing import Any
 
 from d2d.core.evidence import create_execution_evidence
@@ -478,7 +480,7 @@ def _restore_segments_for_fault_test(tmp_path: Path):
 
 
 def test_restore_file_fsync_failure_does_not_publish_or_leave_staging(
-    tmp_path: Path, monkeypatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ):
     segments = _restore_segments_for_fault_test(tmp_path)
     destination = tmp_path / "restore-fsync-failure.sqlite"
