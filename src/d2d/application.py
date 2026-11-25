@@ -25,7 +25,7 @@ from d2d.query_history import QueryHistoryItem, SQLiteQueryHistoryStore
 
 
 class CopilotService:
-    """One bounded query runtime with a small, process-local question history."""
+    """One bounded query runtime with a durable, operator-configurable question history."""
 
     def __init__(
         self,
@@ -94,9 +94,14 @@ class CopilotService:
 
         if not question.strip() or not evidence_id.strip():
             raise ValueError("question and evidence_id must not be empty")
+        history_limit = (
+            min(1_000, self._history_store.max_records)
+            if self._history_store.max_records is not None
+            else 1_000
+        )
         if not any(
             item.evidence_id == evidence_id and item.question == question
-            for item in self._history_store.list(limit=1_000)
+            for item in self._history_store.list(limit=history_limit)
         ):
             raise ValueError("evidence_id is not associated with this exact query in local history")
         try:
@@ -163,7 +168,9 @@ class CopilotService:
         }
 
     def history(self, *, limit: int = 100) -> list[dict[str, object]]:
-        return [item.as_dict() for item in self._history_store.list(limit=limit)]
+        retention_limit = self._history_store.max_records
+        effective_limit = min(limit, retention_limit) if retention_limit is not None else limit
+        return [item.as_dict() for item in self._history_store.list(limit=effective_limit)]
 
     def traces(self, *, limit: int = 100) -> list[dict[str, object]]:
         """Return verified trace summaries; an empty list means no decisions were traced."""
@@ -231,12 +238,15 @@ def build_service(
     catalog_path: str,
     evidence_path: str = "d2d-evidence.sqlite",
     history_path: str = "d2d-history.sqlite",
+    history_max_records: int | None = None,
     trace_path: str = "d2d-traces.sqlite",
     provider: str = "rules",
     model: str = "qwen3:8b",
     isolated_worker: bool = False,
 ) -> CopilotService:
     """Build the same read-only query pipeline for every product interface."""
+    if history_max_records is not None and history_max_records < 1:
+        raise ValueError("history_max_records must be positive when configured")
     source = DuckDBConnector(catalog_path)
     source.open()
     history_store: SQLiteQueryHistoryStore | None = None
@@ -253,7 +263,7 @@ def build_service(
         else:
             raise ValueError("provider must be 'rules' or 'ollama'")
         evidence_store = SQLiteEvidenceStore(evidence_path)
-        history_store = SQLiteQueryHistoryStore(history_path)
+        history_store = SQLiteQueryHistoryStore(history_path, max_records=history_max_records)
         trace_store = SQLiteDecisionTraceStore(trace_path)
         return CopilotService(
             source=source,

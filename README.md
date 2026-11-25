@@ -102,11 +102,14 @@ reviewed MCP proposal contract is added.
 Serve `ui/index.html` from the same origin as the REST API (or configure a local
 reverse proxy) to use the lightweight browser interface. It displays query results,
 bounded execution metadata, the evidence identifier, schema fingerprint, planner
-identity, and recent query history. Query history is stored in a bounded local SQLite
-database and survives service restarts; it stores the question and evidence metadata,
-not result rows or raw SQL bind values. Questions themselves may contain sensitive
-information, so protect the history database and apply the documented retention policy.
-Decision traces remain a separate audit layer.
+identity, and recent query history. Query history is stored in a local SQLite database and survives service restarts; it stores
+the question and evidence metadata, not result rows or raw SQL bind values. By default,
+history is retained without automatic pruning. An operator may explicitly opt into
+automatic pruning by passing `--history-max-records N` to `d2d query`, `d2d serve`,
+`d2d schema`, or `d2d mcp`; records older than the newest N are deleted on append.
+Questions themselves may contain sensitive information, so protect the history database
+and choose a retention limit deliberately. Evidence and DecisionTrace journals remain
+separate append-only audit layers and are never pruned by this option.
 
 The CLI, REST, and MCP interfaces share one service implementation. The default
 planner is the deterministic Persian/English grammar; `--provider ollama` opts

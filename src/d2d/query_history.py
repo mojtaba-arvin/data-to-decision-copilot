@@ -1,4 +1,4 @@
-"""SQLite-backed bounded question history; result rows are never stored here."""
+"""SQLite-backed question history with opt-in pruning; result rows are never stored."""
 from __future__ import annotations
 
 import sqlite3
@@ -23,9 +23,9 @@ class QueryHistoryItem:
 class SQLiteQueryHistoryStore:
     """Persist query metadata without copying potentially sensitive result rows."""
 
-    def __init__(self, path: str | Path, *, max_records: int = 1_000) -> None:
-        if max_records < 1:
-            raise ValueError("max_records must be positive")
+    def __init__(self, path: str | Path, *, max_records: int | None = None) -> None:
+        if max_records is not None and max_records < 1:
+            raise ValueError("max_records must be positive when configured")
         self._max_records = max_records
         self._lock = Lock()
         self._connection = sqlite3.connect(
@@ -48,6 +48,11 @@ class SQLiteQueryHistoryStore:
             """
         )
 
+    @property
+    def max_records(self) -> int | None:
+        """Return the configured opt-in automatic retention limit."""
+        return self._max_records
+
     def append(self, item: QueryHistoryItem) -> None:
         with self._lock:
             self._connection.execute("BEGIN IMMEDIATE")
@@ -64,24 +69,27 @@ class SQLiteQueryHistoryStore:
                         item.schema_fingerprint, item.planner_reference, item.created_at,
                     ),
                 )
-                self._connection.execute(
-                    """
-                    DELETE FROM query_history
-                    WHERE sequence NOT IN (
-                        SELECT sequence FROM query_history
-                        ORDER BY sequence DESC LIMIT ?
+                if self._max_records is not None:
+                    self._connection.execute(
+                        """
+                        DELETE FROM query_history
+                        WHERE sequence NOT IN (
+                            SELECT sequence FROM query_history
+                            ORDER BY sequence DESC LIMIT ?
+                        )
+                        """,
+                        (self._max_records,),
                     )
-                    """,
-                    (self._max_records,),
-                )
                 self._connection.execute("COMMIT")
             except Exception:
                 self._connection.execute("ROLLBACK")
                 raise
 
     def list(self, *, limit: int = 100) -> list[QueryHistoryItem]:
-        if limit < 1 or limit > self._max_records:
-            raise ValueError("history limit must be within the configured record bound")
+        if limit < 1 or limit > 1_000:
+            raise ValueError("history limit must be between 1 and 1000")
+        if self._max_records is not None and limit > self._max_records:
+            raise ValueError("history limit cannot exceed the configured retention bound")
         with self._lock:
             rows = self._connection.execute(
                 """
