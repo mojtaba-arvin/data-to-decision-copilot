@@ -322,7 +322,6 @@ def test_rest_server_validates_socket_timeout_bounds(catalog: Path, tmp_path: Pa
 def test_rest_request_logs_are_structured_and_exclude_question_payload(
     catalog: Path,
     tmp_path: Path,
-    caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = build_service(
@@ -364,6 +363,8 @@ def test_rest_request_logs_are_structured_and_exclude_question_payload(
         assert isinstance(event["duration_ms"], (int, float))
         assert question not in messages[0]
     finally:
+        logger.removeHandler(capture)
+        logger.setLevel(previous_level)
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
