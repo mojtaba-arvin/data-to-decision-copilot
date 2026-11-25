@@ -245,6 +245,8 @@ def build_service(
     isolated_worker: bool = False,
 ) -> CopilotService:
     """Build the same read-only query pipeline for every product interface."""
+    if history_max_records is not None and history_max_records < 1:
+        raise ValueError("history_max_records must be positive when configured")
     source = DuckDBConnector(catalog_path)
     source.open()
     history_store: SQLiteQueryHistoryStore | None = None
