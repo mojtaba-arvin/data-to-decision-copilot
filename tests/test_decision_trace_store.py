@@ -1,3 +1,5 @@
+import hashlib
+import json
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
@@ -10,6 +12,7 @@ from d2d.core.decision_trace import create_decision_trace
 from d2d.core.decision_trace_store import SQLiteDecisionTraceStore
 from d2d.core.evidence import create_execution_evidence
 from d2d.core.evidence_store import SQLiteEvidenceStore
+from d2d.core.journal_chain import GENESIS, restore_archive_chain
 from d2d.core.sql_executor import QueryResult
 
 
@@ -293,3 +296,136 @@ def test_trace_checkpoint_metadata_initialization_refuses_invalid_journal(tmp_pa
             "SELECT COUNT(*) FROM trace_store_meta WHERE key LIKE 'checkpoint_%'"
         ).fetchone()[0]
     assert keys == 0
+
+
+
+def _write_trace_segment_manifest(
+    database: Path,
+    manifest: Path,
+    *,
+    segment_id: str,
+    previous_entry: str,
+    previous_manifest: str,
+) -> tuple[str, str]:
+    with sqlite3.connect(database) as connection:
+        rows = connection.execute(
+            "SELECT sequence, previous_sha256, entry_sha256 "
+            "FROM decision_trace_journal ORDER BY sequence"
+        ).fetchall()
+    payload = {
+        "format_version": 2,
+        "journal_kind": "decision_trace",
+        "database_file": database.name,
+        "schema_version": 1,
+        "segment_id": segment_id,
+        "first_sequence": int(rows[0][0]),
+        "last_sequence": int(rows[-1][0]),
+        "records": len(rows),
+        "first_previous_sha256": previous_entry,
+        "first_entry_sha256": str(rows[0][2]),
+        "last_entry_sha256": str(rows[-1][2]),
+        "previous_manifest_sha256": previous_manifest,
+        "database_bytes": database.stat().st_size,
+        "database_sha256": hashlib.sha256(database.read_bytes()).hexdigest(),
+    }
+    canonical = json.dumps(
+        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
+    ).encode("utf-8")
+    digest = hashlib.sha256(canonical).hexdigest()
+    manifest.write_bytes(
+        json.dumps(
+            {**payload, "manifest_sha256": digest},
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+        + b"\\n"
+    )
+    return digest, str(rows[-1][2])
+
+
+def test_restores_real_decision_trace_chain_and_replays_against_evidence(
+    tmp_path: Path,
+):
+    archive = tmp_path / "trace-archive"
+    archive.mkdir()
+    evidence_store = SQLiteEvidenceStore(tmp_path / "evidence.sqlite")
+
+    first_live = SQLiteDecisionTraceStore(tmp_path / "first-traces.sqlite")
+    first_traces = [make_trace(evidence_store, value) for value in (1, 2)]
+    for trace in first_traces:
+        first_live.append(trace)
+    first_live.initialize_checkpoint_metadata()
+    first_database = archive / "trace-segment-1.sqlite"
+    first_live.backup(first_database)
+    first_manifest = archive / "trace-segment-1.manifest.json"
+    first_manifest_hash, first_head = _write_trace_segment_manifest(
+        first_database,
+        first_manifest,
+        segment_id="decision-trace-1",
+        previous_entry=GENESIS,
+        previous_manifest=GENESIS,
+    )
+
+    second_path = tmp_path / "second-traces.sqlite"
+    SQLiteDecisionTraceStore(second_path)
+    with sqlite3.connect(second_path) as connection:
+        connection.executemany(
+            "INSERT INTO trace_store_meta(key, value) VALUES (?, ?)",
+            [
+                ("checkpoint_schema_version", "1"),
+                ("checkpoint_sequence", "2"),
+                ("checkpoint_sha256", first_head),
+            ],
+        )
+    second_live = SQLiteDecisionTraceStore(
+        second_path, trusted_checkpoint=(2, first_head)
+    )
+    second_traces = [make_trace(evidence_store, value) for value in (3, 4)]
+    for trace in second_traces:
+        second_live.append(trace)
+    second_database = archive / "trace-segment-2.sqlite"
+    second_live.backup(second_database)
+    second_manifest = archive / "trace-segment-2.manifest.json"
+    _write_trace_segment_manifest(
+        second_database,
+        second_manifest,
+        segment_id="decision-trace-2",
+        previous_entry=first_head,
+        previous_manifest=first_manifest_hash,
+    )
+
+    def verify_trace_segment(path: Path, start: int, previous: str):
+        store = SQLiteDecisionTraceStore(
+            path, trusted_checkpoint=(start - 1, previous)
+        )
+        return store.verify_segment(
+            start_sequence=start, previous_sha256=previous
+        )
+
+    destination = tmp_path / "restored-decision-traces.sqlite"
+    report = restore_archive_chain(
+        [(first_database, first_manifest), (second_database, second_manifest)],
+        destination,
+        journal_kind="decision_trace",
+        schema_version=1,
+        verify_segment=verify_trace_segment,
+    )
+
+    assert report.records_restored == 4
+    assert report.last_sequence == 4
+    restored = SQLiteDecisionTraceStore(destination)
+    verification = restored.verify(
+        evidence_store=evidence_store,
+        expected_schema_fingerprints={"warehouse": "a" * 64},
+    )
+    assert verification.valid
+    assert verification.records_checked == 4
+    assert verification.evidence_checked == 4
+    for trace in first_traces + second_traces:
+        assert restored.replay(
+            trace.trace_id,
+            evidence_store=evidence_store,
+            expected_schema_fingerprints={"warehouse": "a" * 64},
+        ) == trace
