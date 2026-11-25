@@ -185,3 +185,14 @@ This remains restore-only. It does not implement rotation, active checkpoint
 advancement, signatures, redundant archive copies, or retention. Crash/fault
 injection for restore publication and paired Evidence/DecisionTrace recovery
 remain required before the archive lifecycle can be considered operational.
+
+
+## Paired journal recovery test boundary
+
+A paired integration test now restores Evidence and DecisionTrace archive chains
+into fresh databases, opens both restored stores, verifies each trace against
+the restored Evidence journal, and replays every historical trace. This proves
+the logical cross-journal references survive paired recovery in the test
+harness. It does not yet provide a single operator command or atomic
+directory-level publication of the pair; those remain part of the operational
+restore workflow and must be implemented before the release drill is complete.
