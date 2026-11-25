@@ -97,7 +97,7 @@ def make_segment(
         "database_sha256": hashlib.sha256(database.read_bytes()).hexdigest(),
     }
     digest = hashlib.sha256(_canonical_for_test(payload)).hexdigest()
-        _canonical_for_test({**payload, "manifest_sha256": digest}) + b"\n"
+    manifest.write_bytes(\n        _canonical_for_test({**payload, "manifest_sha256": digest}) + b"\\n"\n    )
     return database, manifest, digest, entries[-1][1]
 
 
