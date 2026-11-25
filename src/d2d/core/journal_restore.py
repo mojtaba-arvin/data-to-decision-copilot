@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import ctypes
-import hashlib
 import errno
+import hashlib
 import json
 import os
 import sqlite3
