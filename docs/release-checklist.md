@@ -95,27 +95,41 @@ autonomous decision generation.
 - [ ] A new operator can install from a clean supported environment using only
   the published instructions.
 - [x] A synthetic demo catalog can be created with `d2d demo` and queried without writing application code; the command refuses to overwrite existing paths.
-- [ ] The documented golden path succeeds end to end:
+- [x] The REST golden path succeeds end to end on the shipped demo catalog:
   schema discovery → natural-language query → bounded read-only execution →
   persisted evidence → explicit human-authored decision submission →
-  DecisionTrace listing and replay.
+  DecisionTrace listing and replay (PR #57).
 - [ ] CLI, REST, and browser UI communicate success, abstention, validation
   failure, timeout, and unavailable-model states consistently.
+  - [x] Browser UI maps timeout, worker, and storage errors to user-facing
+    messages; CLI parity and the full abstention/validation matrix remain open (PRs #75, #77).
 - [ ] Persian/English and RTL behavior are tested in the browser UI, not only
   in isolated formatting helpers.
+  - [x] Chromium covers language switching, document `lang`/`dir`, query,
+    decision, trace history, and timeout states; visual/viewport review remains open (PR #77).
 
 ### Runtime operations
 
 - [ ] Startup validates required configuration and fails with actionable
   messages; credentials are never passed as command-line values or logged.
-- [ ] Health and readiness checks distinguish process liveness from usable
-  catalog/database/model dependencies.
+  - [x] REST bind/port/token/TLS settings and TLS file loading are validated
+    before service databases are created (PR #80).
+- [x] Health and readiness checks distinguish process liveness from usable
+  catalog/database/model dependencies; Ollama readiness checks the exact
+  configured tag through a one-second metadata probe (PRs #52, #81). This does
+  not prove successful inference.
 - [ ] Graceful shutdown stops accepting new work and safely terminates or
   drains supervised workers within a bounded deadline.
+  - [x] Active handlers are counted and the warning threshold is checked
+    before blocking request-thread joins; hard cancellation/deadline remains open (PR #76).
 - [ ] Logs are structured, bounded, and redact credentials and sensitive query
   payloads by default.
+  - [x] REST request and failure events use fixed JSON fields and redact
+    query/error details; non-REST subsystem logging remains open (PRs #62, #65, #75).
 - [ ] SQLite busy/locked errors, disk pressure, corrupt journals, query
   timeouts, and worker crashes have actionable operator signals.
+  - [x] REST distinguishes SQLite contention, storage-full, query timeout,
+    worker failure, and unexpected errors; proactive disk alerts and corrupt-journal signals remain open (PR #75).
 - [ ] Query-history and journal data lifecycle/retention behavior is explicit;
   no implicit deletion is allowed.
   - [x] Query history now retains all records by default; automatic pruning is
