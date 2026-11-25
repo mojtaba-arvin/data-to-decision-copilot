@@ -625,3 +625,88 @@ def test_restores_paired_journals_and_replays_traces_against_restored_evidence(
             evidence_store=restored_evidence,
             expected_schema_fingerprints={"warehouse": "a" * 64},
         ) == trace
+
+
+
+def test_journal_backup_cli_creates_restoreable_paired_archive(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+):
+    evidence_path = tmp_path / "source-evidence.sqlite"
+    trace_path = tmp_path / "source-traces.sqlite"
+    evidence_store = SQLiteEvidenceStore(evidence_path)
+    trace_store = SQLiteDecisionTraceStore(trace_path)
+    trace = make_trace(evidence_store, 21)
+    trace_store.append(trace)
+
+    archive = tmp_path / "operator-backup"
+    backup_exit = main([
+        "journal", "backup",
+        "--evidence-db", str(evidence_path),
+        "--trace-db", str(trace_path),
+        "--output", str(archive),
+    ])
+    assert backup_exit == 0
+    backup_report = json.loads(capsys.readouterr().out)
+    assert backup_report["evidence_records"] == 1
+    assert backup_report["trace_records"] == 1
+    assert backup_report["traces_evidence_checked"] == 1
+
+    restored_directory = tmp_path / "operator-restore"
+    restore_exit = main([
+        "journal", "restore",
+        "--evidence-archive", str(archive / "evidence"),
+        "--trace-archive", str(archive / "traces"),
+        "--output", str(restored_directory),
+    ])
+    assert restore_exit == 0
+    capsys.readouterr()
+    restored_evidence = SQLiteEvidenceStore(restored_directory / "evidence.sqlite")
+    restored_traces = SQLiteDecisionTraceStore(
+        restored_directory / "decision-traces.sqlite"
+    )
+    verification = restored_traces.verify(evidence_store=restored_evidence)
+    assert verification.valid
+    assert verification.records_checked == 1
+    assert verification.evidence_checked == 1
+    assert restored_traces.replay(
+        trace.trace_id,
+        evidence_store=restored_evidence,
+        expected_schema_fingerprints={"warehouse": "a" * 64},
+    ) == trace
+
+
+def test_journal_backup_and_restore_support_empty_trace_genesis(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+):
+    evidence_path = tmp_path / "empty-trace-evidence.sqlite"
+    trace_path = tmp_path / "empty-trace-traces.sqlite"
+    evidence_store = SQLiteEvidenceStore(evidence_path)
+    evidence_store.append(make_evidence(31))
+    SQLiteDecisionTraceStore(trace_path)
+
+    archive = tmp_path / "empty-trace-backup"
+    assert main([
+        "journal", "backup",
+        "--evidence-db", str(evidence_path),
+        "--trace-db", str(trace_path),
+        "--output", str(archive),
+    ]) == 0
+    backup_report = json.loads(capsys.readouterr().out)
+    assert backup_report["evidence_records"] == 1
+    assert backup_report["trace_records"] == 0
+
+    restored_directory = tmp_path / "empty-trace-restore"
+    assert main([
+        "journal", "restore",
+        "--evidence-archive", str(archive / "evidence"),
+        "--trace-archive", str(archive / "traces"),
+        "--output", str(restored_directory),
+    ]) == 0
+    capsys.readouterr()
+    restored_evidence = SQLiteEvidenceStore(restored_directory / "evidence.sqlite")
+    restored_traces = SQLiteDecisionTraceStore(
+        restored_directory / "decision-traces.sqlite"
+    )
+    assert restored_evidence.verify().valid
+    assert restored_traces.verify(evidence_store=restored_evidence).valid
+    assert restored_traces.count() == 0
