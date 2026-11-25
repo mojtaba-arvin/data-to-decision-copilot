@@ -163,7 +163,9 @@ class CopilotService:
         }
 
     def history(self, *, limit: int = 100) -> list[dict[str, object]]:
-        return [item.as_dict() for item in self._history_store.list(limit=limit)]
+        retention_limit = self._history_store.max_records
+        effective_limit = min(limit, retention_limit) if retention_limit is not None else limit
+        return [item.as_dict() for item in self._history_store.list(limit=effective_limit)]
 
     def traces(self, *, limit: int = 100) -> list[dict[str, object]]:
         """Return verified trace summaries; an empty list means no decisions were traced."""
@@ -231,6 +233,7 @@ def build_service(
     catalog_path: str,
     evidence_path: str = "d2d-evidence.sqlite",
     history_path: str = "d2d-history.sqlite",
+    history_max_records: int | None = None,
     trace_path: str = "d2d-traces.sqlite",
     provider: str = "rules",
     model: str = "qwen3:8b",
@@ -253,7 +256,7 @@ def build_service(
         else:
             raise ValueError("provider must be 'rules' or 'ollama'")
         evidence_store = SQLiteEvidenceStore(evidence_path)
-        history_store = SQLiteQueryHistoryStore(history_path)
+        history_store = SQLiteQueryHistoryStore(history_path, max_records=history_max_records)
         trace_store = SQLiteDecisionTraceStore(trace_path)
         return CopilotService(
             source=source,
