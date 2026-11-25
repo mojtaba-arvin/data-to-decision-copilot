@@ -26,6 +26,10 @@ class QueryTimeoutError(QueryExecutionError):
     """Raised after the active DuckDB query was interrupted on deadline."""
 
 
+class QueryWorkerError(QueryExecutionError):
+    """Raised when an isolated query worker fails or violates its IPC contract."""
+
+
 @dataclass(frozen=True, slots=True)
 class ExecutionLimits:
     timeout_seconds: float = 5.0
