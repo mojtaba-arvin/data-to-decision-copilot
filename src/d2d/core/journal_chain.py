@@ -261,3 +261,146 @@ def _verify_segment_checkpoint(
         checkpoint_hash = _digest(metadata["checkpoint_sha256"], "checkpoint hash")
     if checkpoint_sequence != first_sequence - 1 or checkpoint_hash != previous_sha256:
         raise ValueError("segment checkpoint does not match manifest predecessor")
+
+
+def restore_archive_chain(
+    segments: Sequence[tuple[str | Path, str | Path]],
+    destination: str | Path,
+    *,
+    journal_kind: JournalKind,
+    schema_version: int,
+    verify_segment: Callable[[Path, int, str], SegmentVerification],
+) -> ArchiveChainRestoreReport:
+    """Reconstruct a complete genesis-to-head journal at a new destination.
+
+    Later segment records are appended to a staged copy of the first segment.
+    Historical hashes and checkpoint metadata are preserved, and the complete
+    reconstructed journal is verified before atomic no-overwrite publication.
+    """
+    target = Path(destination).resolve()
+    source_paths = {
+        Path(artifact).resolve()
+        for segment in segments
+        for artifact in segment
+    }
+    if target in source_paths:
+        raise ValueError("restore destination must differ from every archive artifact")
+    if target.exists():
+        raise FileExistsError(f"restore destination already exists: {target}")
+
+    chain_report = verify_archive_chain(
+        segments,
+        journal_kind=journal_kind,
+        schema_version=schema_version,
+        verify_segment=verify_segment,
+    )
+    if not chain_report.valid:
+        raise ValueError(f"cannot restore an invalid archive chain: {chain_report.error}")
+
+    table_name, _ = _TABLES[journal_kind]
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(
+        prefix=".d2d-chain-restore-", dir=target.parent
+    ) as stage_directory:
+        staged = Path(stage_directory) / target.name
+        first_database = Path(segments[0][0]).resolve()
+        source_uri = first_database.as_uri() + "?mode=ro"
+        with (
+            closing(sqlite3.connect(source_uri, uri=True)) as source,
+            closing(sqlite3.connect(staged)) as backup,
+        ):
+            source.backup(backup)
+
+        with closing(sqlite3.connect(staged, uri=True)) as restored:
+            for index, (database_value, _) in enumerate(segments[1:], start=2):
+                archive_uri = Path(database_value).resolve().as_uri() + "?mode=ro"
+                restored.execute(
+                    "ATTACH DATABASE ? AS archive_segment", (archive_uri,)
+                )
+                try:
+                    main_columns = restored.execute(
+                        f"PRAGMA main.table_info({table_name})"
+                    ).fetchall()
+                    archive_columns = restored.execute(
+                        f"PRAGMA archive_segment.table_info({table_name})"
+                    ).fetchall()
+
+                    def signature(
+                        rows: list[tuple[Any, ...]],
+                    ) -> tuple[tuple[str, str, int, int], ...]:
+                        return tuple(
+                            (str(row[1]), str(row[2]), int(row[3]), int(row[5]))
+                            for row in rows
+                        )
+
+                    if not main_columns or signature(main_columns) != signature(archive_columns):
+                        raise ValueError(
+                            f"segment {index}: journal table schema differs from first segment"
+                        )
+                    restored.execute("BEGIN IMMEDIATE")
+                    restored.execute(
+                        f"INSERT INTO main.{table_name} "
+                        f"SELECT * FROM archive_segment.{table_name}"
+                    )
+                    restored.commit()
+                except BaseException:
+                    restored.rollback()
+                    raise
+                finally:
+                    restored.execute("DETACH DATABASE archive_segment")
+
+            count, first, last, head = restored.execute(
+                f"SELECT COUNT(*), MIN(sequence), MAX(sequence), "
+                f"(SELECT entry_sha256 FROM {table_name} ORDER BY sequence DESC LIMIT 1) "
+                f"FROM {table_name}"
+            ).fetchone()
+            if (
+                int(count) != chain_report.records_checked
+                or first != 1
+                or last != chain_report.last_sequence
+                or str(head) != chain_report.head_sha256
+            ):
+                raise ValueError(
+                    "reconstructed journal bounds or head do not match archive chain"
+                )
+
+        restored_report = verify_segment(staged, 1, GENESIS)
+        if (
+            not restored_report.valid
+            or restored_report.records_checked != chain_report.records_checked
+        ):
+            raise ValueError("reconstructed full journal failed independent verification")
+
+        final_chain_report = verify_archive_chain(
+            segments,
+            journal_kind=journal_kind,
+            schema_version=schema_version,
+            verify_segment=verify_segment,
+        )
+        if (
+            not final_chain_report.valid
+            or final_chain_report.head_sha256 != chain_report.head_sha256
+            or final_chain_report.records_checked != chain_report.records_checked
+            or final_chain_report.manifest_sha256 != chain_report.manifest_sha256
+        ):
+            raise ValueError("archive chain changed during restore")
+
+        with staged.open("rb") as stream:
+            os.fsync(stream.fileno())
+        os.link(staged, target)
+        directory_fd = os.open(
+            target.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+        )
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+
+    return ArchiveChainRestoreReport(
+        destination=str(target),
+        segments_checked=chain_report.segments_checked,
+        records_restored=chain_report.records_checked,
+        last_sequence=chain_report.last_sequence,
+        head_sha256=chain_report.head_sha256,
+        manifest_sha256=chain_report.manifest_sha256,
+    )
