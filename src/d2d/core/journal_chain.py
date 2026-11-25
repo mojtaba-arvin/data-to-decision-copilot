@@ -224,3 +224,40 @@ def verify_archive_chain(
             valid=False, segments_checked=0, records_checked=0, last_sequence=0,
             head_sha256=GENESIS, error=str(exc),
         )
+
+
+def _verify_segment_checkpoint(
+    database: Path,
+    *,
+    journal_kind: JournalKind,
+    schema_version: int,
+    first_sequence: int,
+    previous_sha256: str,
+) -> None:
+    """Require persisted checkpoint metadata to match the manifest boundary."""
+    _, meta_table = _TABLES[journal_kind]
+    with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True)) as connection:
+        rows = connection.execute(
+            f"SELECT key, value FROM {meta_table} WHERE key IN "
+            "('schema_version', 'checkpoint_schema_version', "
+            "'checkpoint_sequence', 'checkpoint_sha256')"
+        ).fetchall()
+    metadata = {str(key): str(value) for key, value in rows}
+    if metadata.get("schema_version") != str(schema_version):
+        raise ValueError("segment database schema metadata mismatch")
+    checkpoint_keys = {
+        "checkpoint_schema_version", "checkpoint_sequence", "checkpoint_sha256",
+    }
+    present = checkpoint_keys.intersection(metadata)
+    if not present:
+        checkpoint_sequence, checkpoint_hash = 0, GENESIS
+    elif present != checkpoint_keys or metadata["checkpoint_schema_version"] != "1":
+        raise ValueError("segment has incomplete or unsupported checkpoint metadata")
+    else:
+        try:
+            checkpoint_sequence = int(metadata["checkpoint_sequence"])
+        except ValueError as exc:
+            raise ValueError("segment checkpoint sequence is invalid") from exc
+        checkpoint_hash = _digest(metadata["checkpoint_sha256"], "checkpoint hash")
+    if checkpoint_sequence != first_sequence - 1 or checkpoint_hash != previous_sha256:
+        raise ValueError("segment checkpoint does not match manifest predecessor")
