@@ -44,6 +44,34 @@ class OllamaStructuredPlanProvider(StructuredPlanProvider):
             raise ValueError("max_output_tokens must be between 1 and 8192")
         _validate_loopback_url(self.base_url)
 
+    def is_ready(self) -> bool:
+        """Check the loopback API and configured model tag with a one-second bound."""
+        request = Request(
+            f"{self.base_url.rstrip('/')}/api/tags",
+            headers={"Accept": "application/json"},
+            method="GET",
+        )
+        try:
+            with urlopen(request, timeout=1.0) as response:
+                envelope = response.read(_MAX_ENVELOPE_BYTES + 1)
+        except (HTTPError, URLError, TimeoutError, OSError):
+            return False
+        if len(envelope) > _MAX_ENVELOPE_BYTES:
+            return False
+        try:
+            parsed: object = json.loads(envelope)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return False
+        if not isinstance(parsed, dict):
+            return False
+        models = parsed.get("models")
+        if not isinstance(models, list):
+            return False
+        return any(
+            isinstance(model, dict) and model.get("name") == self.model
+            for model in models
+        )
+
     def generate(self, request: StructuredGenerationRequest) -> str:
         """Generate one JSON response, with strict local-network and size bounds."""
         payload = {
