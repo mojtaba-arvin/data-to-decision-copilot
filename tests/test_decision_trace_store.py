@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from d2d.cli import main
 from d2d.core.contracts import Confidence, Decision, DecisionClaim, DecisionTrace, Evidence
 from d2d.core.decision_trace import create_decision_trace
 from d2d.core.decision_trace_store import SQLiteDecisionTraceStore
@@ -488,7 +489,7 @@ def _write_evidence_segment_manifest(
 
 
 def test_restores_paired_journals_and_replays_traces_against_restored_evidence(
-    tmp_path: Path,
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ):
     archive = tmp_path / "paired-archive"
     evidence_archive = archive / "evidence"
@@ -596,18 +597,21 @@ def test_restores_paired_journals_and_replays_traces_against_restored_evidence(
         )
 
     restored_directory = tmp_path / "restored-pair"
-    report = restore_paired_journals(
-        evidence_archive,
-        trace_archive,
-        restored_directory,
-    )
+    exit_code = main([
+        "journal", "restore",
+        "--evidence-archive", str(evidence_archive),
+        "--trace-archive", str(trace_archive),
+        "--output", str(restored_directory),
+    ])
+    assert exit_code == 0
+    report = json.loads(capsys.readouterr().out)
     restored_evidence_path = restored_directory / "evidence.sqlite"
     restored_trace_path = restored_directory / "decision-traces.sqlite"
     restored_evidence = SQLiteEvidenceStore(restored_evidence_path)
     restored_traces = SQLiteDecisionTraceStore(restored_trace_path)
-    assert report.evidence_records_restored == 4
-    assert report.trace_records_restored == 4
-    assert report.traces_evidence_checked == 4
+    assert report["evidence_records_restored"] == 4
+    assert report["trace_records_restored"] == 4
+    assert report["traces_evidence_checked"] == 4
     verification = restored_traces.verify(
         evidence_store=restored_evidence,
         expected_schema_fingerprints={"warehouse": "a" * 64},
