@@ -237,3 +237,52 @@ def test_checkpoint_aware_verifier_accepts_non_genesis_trace_segment(tmp_path: P
     )
     assert not rejected.valid
     assert rejected.error == "previous-entry link mismatch"
+
+
+def test_checkpoint_metadata_preserves_trace_sequence_after_archived_prefix(tmp_path: Path):
+    evidence_store = SQLiteEvidenceStore(tmp_path / "checkpoint-trace-evidence.sqlite")
+    traces = [make_trace(evidence_store, value) for value in (1, 2, 3)]
+    store = SQLiteDecisionTraceStore(tmp_path / "checkpoint-traces.sqlite")
+    store.append(traces[0])
+    store.append(traces[1])
+    assert store.initialize_checkpoint_metadata() == (0, "0" * 64)
+
+    with closing(sqlite3.connect(store.path)) as connection:
+        head = connection.execute(
+            "SELECT entry_sha256 FROM decision_trace_journal WHERE sequence = 2"
+        ).fetchone()[0]
+        connection.execute("DROP TRIGGER decision_trace_no_delete")
+        connection.execute("DELETE FROM decision_trace_journal")
+        connection.execute(
+            "UPDATE trace_store_meta SET value = '2' WHERE key = 'checkpoint_sequence'"
+        )
+        connection.execute(
+            "UPDATE trace_store_meta SET value = ? WHERE key = 'checkpoint_sha256'", (head,)
+        )
+        connection.commit()
+
+    assert store.verify().valid
+    assert store.append(traces[2]) == 3
+    assert store.verify().valid
+    assert store.count() == 1
+
+
+def test_trace_checkpoint_metadata_initialization_refuses_invalid_journal(tmp_path: Path):
+    evidence_store = SQLiteEvidenceStore(tmp_path / "invalid-trace-evidence.sqlite")
+    trace = make_trace(evidence_store)
+    store = SQLiteDecisionTraceStore(tmp_path / "invalid-checkpoint-traces.sqlite")
+    store.append(trace)
+    with closing(sqlite3.connect(store.path)) as connection:
+        connection.execute("DROP TRIGGER decision_trace_no_update")
+        connection.execute(
+            "UPDATE decision_trace_journal SET payload = '{}' WHERE sequence = 1"
+        )
+        connection.commit()
+
+    with pytest.raises(ValueError, match="invalid journal"):
+        store.initialize_checkpoint_metadata()
+    with closing(sqlite3.connect(store.path)) as connection:
+        keys = connection.execute(
+            "SELECT COUNT(*) FROM trace_store_meta WHERE key LIKE 'checkpoint_%'"
+        ).fetchone()[0]
+    assert keys == 0
