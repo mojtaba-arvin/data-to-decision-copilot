@@ -149,16 +149,19 @@ def main(argv: Sequence[str] | None = None) -> int:
                         not serve_thread.is_alive()
                         and server.wait_for_idle(args.shutdown_drain_warning_seconds)
                     )
-                    server.server_close()
                     if not drained:
                         logging.getLogger("d2d.shutdown").warning(
                             json.dumps({
                                 "event": "shutdown_drain_exceeded_warning_threshold",
-                                "active_requests": "at_least_one",
+                                "active_requests": server.active_handlers,
                                 "warning_after_seconds": args.shutdown_drain_warning_seconds,
                                 "policy": "wait_for_requests_before_closing_service",
                             }, separators=(",", ":"))
                         )
+                    # ThreadingHTTPServer.server_close joins non-daemon request
+                    # threads. Keep this after the warning so slow requests are
+                    # observable, but never close shared stores under live handlers.
+                    server.server_close()
                 finally:
                     signal.signal(signal.SIGINT, previous_sigint)
                     signal.signal(signal.SIGTERM, previous_sigterm)

@@ -426,6 +426,7 @@ def test_rest_server_tracks_active_requests_before_close(
         serve_thread.join(timeout=5)
         assert not serve_thread.is_alive()
         assert not server.wait_for_idle(0.01)
+        assert server.active_handlers >= 1
 
         def close_server() -> None:
             close_started.set()
@@ -444,6 +445,7 @@ def test_rest_server_tracks_active_requests_before_close(
         assert not close_thread.is_alive()
         assert request_errors == []
         assert server.wait_for_idle(5)
+        assert server.active_handlers == 0
     finally:
         release.set()
         server.server_close()

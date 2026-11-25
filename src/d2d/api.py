@@ -46,6 +46,12 @@ class _DrainableThreadingHTTPServer(ThreadingHTTPServer):
             self._active_handlers -= 1
             self._active_condition.notify_all()
 
+    @property
+    def active_handlers(self) -> int:
+        """Return the current number of accepted connections being handled."""
+        with self._active_condition:
+            return self._active_handlers
+
     def wait_for_idle(self, timeout_seconds: float) -> bool:
         """Wait at most timeout_seconds for active request handlers to finish."""
         if timeout_seconds < 0:
