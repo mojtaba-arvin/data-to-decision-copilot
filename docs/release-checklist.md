@@ -134,8 +134,11 @@ autonomous decision generation.
   no implicit deletion is allowed.
   - [x] Query history now retains all records by default; automatic pruning is
     opt-in through `--history-max-records N`.
+  - [x] Explicit data lifecycle and backup-scope policy is documented in
+    [the data lifecycle runbook](operations/data-lifecycle.md); full-application
+    backup/restore and coordinated recovery remain open.
   - [ ] Evidence/DecisionTrace journal pruning remains disabled; source-data
-    lifecycle is controlled by the deployment and still needs an operator policy.
+    deletion and retention are controlled by the deployment owner.
 
 ### Backup, restore, and upgrades
 
