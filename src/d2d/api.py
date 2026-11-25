@@ -3,12 +3,12 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
-import logging
 import json
+import logging
 import secrets
 import socket
-import time
 import ssl
+import time
 from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import BoundedSemaphore, Condition
@@ -25,8 +25,13 @@ class _DrainableThreadingHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
     block_on_close = False
 
-    def __init__(self, server_address: tuple[str, int], handler: type[BaseHTTPRequestHandler],
-                 *, socket_timeout: float) -> None:
+    def __init__(
+        self,
+        server_address: tuple[str, int],
+        handler: type[BaseHTTPRequestHandler],
+        *,
+        socket_timeout: float,
+    ) -> None:
         self._socket_timeout = socket_timeout
         self._active_condition = Condition()
         self._active_handlers = 0
@@ -254,29 +259,6 @@ def create_server(
             return
 
     handler: type[BaseHTTPRequestHandler] = Handler
-
-    class BoundedRequestThreadingHTTPServer(ThreadingHTTPServer):
-        daemon_threads = True
-        block_on_close = False
-
-        def wait_for_idle(self, timeout_seconds: float) -> bool:
-            """Wait at most timeout_seconds for active request handlers to finish."""
-            if timeout_seconds < 0:
-                raise ValueError("shutdown drain timeout must not be negative")
-            deadline = time.monotonic() + timeout_seconds
-            with active_condition:
-                while active_handlers:
-                    remaining = deadline - time.monotonic()
-                    if remaining <= 0:
-                        return False
-                    active_condition.wait(remaining)
-            return True
-
-        def get_request(self) -> tuple[socket.socket, Any]:
-            connection, address = super().get_request()
-            # This bounds idle socket reads/writes, not total query execution time.
-            connection.settimeout(request_socket_timeout_seconds)
-            return connection, address
 
     server = _DrainableThreadingHTTPServer(
         (host, port), handler, socket_timeout=request_socket_timeout_seconds
