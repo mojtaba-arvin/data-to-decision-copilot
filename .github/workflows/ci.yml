@@ -115,7 +115,7 @@ jobs:
       - name: Run installed offline demo journey
         run: |
           offline-venv/bin/d2d --help
-          offline-venv/bin/d2d demo --output ./offline-demo.duckdb
+          offline-venv/bin/d2d demo --output ./offline_demo.duckdb
           offline-venv/bin/d2d schema --catalog ./offline-demo.duckdb
           offline-venv/bin/d2d query --catalog ./offline-demo.duckdb --question "count rows in sales"
 
