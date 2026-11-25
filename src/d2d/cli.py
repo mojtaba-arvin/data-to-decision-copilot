@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import os
+import signal
 from collections.abc import Sequence
 from pathlib import Path
 from threading import Thread
@@ -93,6 +94,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             serve_thread = Thread(
                 target=server.serve_forever, name="d2d-rest-acceptor", daemon=True
             )
+            previous_sigterm = signal.signal(signal.SIGTERM, signal.default_int_handler)
             serve_thread.start()
             try:
                 scheme = "https" if args.tls_certfile else "http"
@@ -102,23 +104,26 @@ def main(argv: Sequence[str] | None = None) -> int:
             except KeyboardInterrupt:
                 pass
             finally:
-                if serve_thread.is_alive():
-                    server.shutdown()
-                    serve_thread.join(timeout=5.0)
-                drained = (
-                    not serve_thread.is_alive()
-                    and server.wait_for_idle(args.shutdown_drain_timeout_seconds)
-                )
-                server.server_close()
-                if not drained:
-                    close_service_on_exit = False
-                    logging.getLogger("d2d.shutdown").critical(
-                        json.dumps({
-                            "event": "shutdown_drain_timeout",
-                            "active_requests": "at_least_one",
-                            "timeout_seconds": args.shutdown_drain_timeout_seconds,
-                        }, separators=(",", ":"))
+                try:
+                    if serve_thread.is_alive():
+                        server.shutdown()
+                        serve_thread.join(timeout=5.0)
+                    drained = (
+                        not serve_thread.is_alive()
+                        and server.wait_for_idle(args.shutdown_drain_timeout_seconds)
                     )
+                    server.server_close()
+                    if not drained:
+                        close_service_on_exit = False
+                        logging.getLogger("d2d.shutdown").critical(
+                            json.dumps({
+                                "event": "shutdown_drain_timeout",
+                                "active_requests": "at_least_one",
+                                "timeout_seconds": args.shutdown_drain_timeout_seconds,
+                            }, separators=(",", ":"))
+                        )
+                finally:
+                    signal.signal(signal.SIGTERM, previous_sigterm)
             return 0 if drained else 1
     finally:
         if close_service_on_exit:
