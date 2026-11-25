@@ -129,7 +129,10 @@ autonomous decision generation.
 - [ ] SQLite busy/locked errors, disk pressure, corrupt journals, query
   timeouts, and worker crashes have actionable operator signals.
   - [x] REST distinguishes SQLite contention, storage-full, query timeout,
-    worker failure, and unexpected errors; proactive disk alerts and corrupt-journal signals remain open (PR #75).
+    worker failure, and unexpected errors (PR #75).
+  - [x] On-demand read-only `d2d doctor` reports filesystem capacity for all
+    application data paths and exits non-zero at critical pressure (PR #84);
+    background disk alerts and corrupt-journal signals remain open.
 - [ ] Query-history and journal data lifecycle/retention behavior is explicit;
   no implicit deletion is allowed.
   - [x] Query history now retains all records by default; automatic pruning is
