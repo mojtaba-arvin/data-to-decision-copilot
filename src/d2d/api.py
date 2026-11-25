@@ -7,8 +7,8 @@ import ipaddress
 import json
 import logging
 import secrets
-import sqlite3
 import socket
+import sqlite3
 import ssl
 import time
 from datetime import UTC, datetime
