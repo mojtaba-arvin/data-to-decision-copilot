@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 
 import duckdb
 import pytest
@@ -9,6 +12,7 @@ import pytest
 from d2d.application import build_service
 from d2d.cli import main
 from d2d.demo import create_demo_catalog
+from d2d.diagnostics import inspect_storage
 
 
 def test_demo_catalog_contains_only_expected_synthetic_sales(tmp_path: Path) -> None:
@@ -72,3 +76,52 @@ def test_demo_catalog_completes_query_to_evidence_journey(tmp_path: Path) -> Non
         assert service.readiness()["status"] == "ready"
     finally:
         service.close()
+
+
+def test_storage_diagnostics_reports_capacity_without_creating_data_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import d2d.diagnostics as diagnostics
+
+    def fake_disk_usage(_path: str | Path) -> Any:
+        return SimpleNamespace(total=1_000, used=900, free=100)
+
+    monkeypatch.setattr(diagnostics.shutil, "disk_usage", fake_disk_usage)
+    paths = {
+        "catalog": tmp_path / "catalog.duckdb",
+        "evidence": tmp_path / "evidence.sqlite",
+    }
+
+    report = inspect_storage(paths)
+
+    assert report["status"] == "warning"
+    assert [item["status"] for item in report["filesystems"]] == ["warning", "warning"]
+    assert all(item["free_bytes"] == 100 for item in report["filesystems"])
+    assert not (tmp_path / "catalog.duckdb").exists()
+    assert not (tmp_path / "evidence.sqlite").exists()
+
+
+def test_storage_diagnostics_rejects_invalid_thresholds(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="thresholds"):
+        inspect_storage(
+            {"catalog": tmp_path / "catalog.duckdb"},
+            warning_free_percent=5,
+            critical_free_percent=10,
+        )
+
+
+def test_doctor_cli_returns_nonzero_for_critical_capacity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import d2d.diagnostics as diagnostics
+
+    def fake_disk_usage(_path: str | Path) -> Any:
+        return SimpleNamespace(total=1_000, used=970, free=30)
+
+    monkeypatch.setattr(diagnostics.shutil, "disk_usage", fake_disk_usage)
+    result = main(["doctor", "--catalog", str(tmp_path / "analytics.duckdb")])
+
+    output = json.loads(capsys.readouterr().out)
+    assert result == 1
+    assert output["status"] == "critical"
+    assert output["filesystems"][0]["free_percent"] == 3.0
