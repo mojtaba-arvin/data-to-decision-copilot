@@ -156,3 +156,38 @@ def test_accepts_localhost_alias(monkeypatch: pytest.MonkeyPatch) -> None:
         model="qwen3:8b", base_url="http://localhost:11434/"
     )
     assert provider.generate(generation_request()) == "{}"
+
+
+
+def test_readiness_checks_exact_configured_model_tag(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_urlopen(request: Request, timeout: float) -> FakeResponse:
+        captured["request"] = request
+        captured["timeout"] = timeout
+        return FakeResponse(json.dumps({"models": [{"name": "qwen3:8b"}]}).encode())
+
+    monkeypatch.setattr("d2d.core.ollama_provider.urlopen", fake_urlopen)
+    provider = OllamaStructuredPlanProvider(model="qwen3:8b")
+    assert provider.is_ready() is True
+    request = captured["request"]
+    assert isinstance(request, Request)
+    assert request.full_url == "http://127.0.0.1:11434/api/tags"
+    assert captured["timeout"] == 1.0
+
+
+def test_readiness_is_false_when_model_missing_or_provider_offline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = OllamaStructuredPlanProvider(model="qwen3:8b")
+    monkeypatch.setattr(
+        "d2d.core.ollama_provider.urlopen",
+        response_stub(json.dumps({"models": [{"name": "qwen3:4b"}]}).encode()),
+    )
+    assert provider.is_ready() is False
+
+    def offline(request: Request, timeout: float) -> FakeResponse:
+        raise URLError("offline")
+
+    monkeypatch.setattr("d2d.core.ollama_provider.urlopen", offline)
+    assert provider.is_ready() is False
