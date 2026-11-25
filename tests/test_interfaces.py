@@ -320,12 +320,19 @@ def test_rest_server_validates_socket_timeout_bounds(catalog: Path, tmp_path: Pa
 
 
 def test_rest_request_logs_are_structured_and_exclude_question_payload(
-    catalog: Path, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    catalog: Path,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = build_service(
         catalog_path=str(catalog),
         evidence_path=str(tmp_path / "redacted-log-evidence.sqlite"),
     )
+    async def fake_query(question: str) -> dict[str, object]:
+        return {"question": question, "rows": [[2]]}
+
+    monkeypatch.setattr(service, "query", fake_query)
     server = create_server(service, port=0)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
