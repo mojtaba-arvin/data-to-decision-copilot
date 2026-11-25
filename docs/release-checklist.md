@@ -82,3 +82,61 @@ and refuses to overwrite an existing backup. The report records the backup
 SHA-256, byte size, record count, and chain-head hash. This does not delete,
 compact, or expire journal entries; retention remains intentionally disabled
 until an explicit audit-retention policy and restore/anchor procedure are approved.
+
+
+## Single-tenant operational readiness
+
+The initial operational release target is a supported **single-tenant** deployment.
+This gate does not authorize hostile-catalog execution, multi-tenant access, or
+autonomous decision generation.
+
+### First-run user journey
+
+- [ ] A new operator can install from a clean supported environment using only
+  the published instructions.
+- [ ] A demo catalog can be created and queried without writing application code.
+- [ ] The documented golden path succeeds end to end:
+  schema discovery → natural-language query → bounded read-only execution →
+  persisted evidence → explicit human-authored decision submission →
+  DecisionTrace listing and replay.
+- [ ] CLI, REST, and browser UI communicate success, abstention, validation
+  failure, timeout, and unavailable-model states consistently.
+- [ ] Persian/English and RTL behavior are tested in the browser UI, not only
+  in isolated formatting helpers.
+
+### Runtime operations
+
+- [ ] Startup validates required configuration and fails with actionable
+  messages; credentials are never passed as command-line values or logged.
+- [ ] Health and readiness checks distinguish process liveness from usable
+  catalog/database/model dependencies.
+- [ ] Graceful shutdown stops accepting new work and safely terminates or
+  drains supervised workers within a bounded deadline.
+- [ ] Logs are structured, bounded, and redact credentials and sensitive query
+  payloads by default.
+- [ ] SQLite busy/locked errors, disk pressure, corrupt journals, query
+  timeouts, and worker crashes have actionable operator signals.
+- [ ] Query-history and journal data lifecycle/retention behavior is explicit;
+  no implicit deletion is allowed.
+
+### Backup, restore, and upgrades
+
+- [ ] A backup is restored into a fresh destination in a repeatable drill.
+- [ ] The restored evidence and decision-trace journals independently verify
+  and historical trace replay succeeds against the restored evidence store.
+- [ ] Upgrade tests cover databases created by the previous supported release.
+- [ ] Offline installation is verified on each published OS/architecture/Python
+  combination, including required native dependencies.
+
+### Deployment boundary
+
+- [ ] Remote service remains single-tenant while shared-token authentication
+  is the only remote identity mechanism.
+- [ ] OS/container policy provides filesystem and network confinement before
+  accepting hostile catalogs; a supervised worker process alone is not a
+  complete sandbox.
+- [ ] Autonomous decision generation remains disabled until the Persian/English
+  semantic-verification release thresholds are met.
+- [ ] Journal rotation and retention remain disabled until archive-chain
+  verification, crash recovery, restore drills, redundant copies, and audited
+  deletion policy are complete.
