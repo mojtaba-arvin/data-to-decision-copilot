@@ -94,7 +94,7 @@ autonomous decision generation.
 
 - [ ] A new operator can install from a clean supported environment using only
   the published instructions.
-- [ ] A demo catalog can be created and queried without writing application code.
+- [x] A synthetic demo catalog can be created with `d2d demo` and queried without writing application code; the command refuses to overwrite existing paths.
 - [ ] The documented golden path succeeds end to end:
   schema discovery → natural-language query → bounded read-only execution →
   persisted evidence → explicit human-authored decision submission →
