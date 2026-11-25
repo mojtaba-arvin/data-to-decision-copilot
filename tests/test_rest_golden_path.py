@@ -91,16 +91,14 @@ def test_rest_golden_path_persists_and_replays_human_decision_trace(
                 }],
             },
         )
-        trace = decision["trace"]
-        assert isinstance(trace, dict)
-        trace_id = trace["trace_id"]
+        trace: dict[str, Any] = decision["trace"]
+        trace_id: str = trace["trace_id"]
         assert isinstance(trace_id, str)
         assert decision["proposal_origin"] == "caller_supplied"
         assert decision["policy"]["allowed"] is True
 
         listed = _get_json(base + "/v1/traces")
-        items = listed["items"]
-        assert isinstance(items, list)
+        items: list[dict[str, Any]] = listed["items"]
         assert any(item["trace_id"] == trace_id for item in items)
 
         replayed = _get_json(base + f"/v1/traces/{trace_id}")
