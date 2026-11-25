@@ -12,7 +12,7 @@ from dataclasses import asdict
 from pathlib import Path
 from threading import Thread
 
-from d2d.api import create_server
+from d2d.api import create_server, validate_server_config
 from d2d.application import build_service
 from d2d.core.journal_restore import backup_paired_journals, restore_paired_journals
 from d2d.demo import create_demo_catalog
@@ -102,6 +102,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(json.dumps(asdict(report), ensure_ascii=False, indent=2))
         return 0
 
+    if args.command == "serve":
+        if not 0.0 <= args.shutdown_drain_warning_seconds <= 300.0:
+            raise ValueError("shutdown drain warning must be between 0 and 300 seconds")
+        validate_server_config(
+            host=args.host,
+            port=args.port,
+            bearer_token=os.environ.get(args.bearer_token_env),
+            tls_certfile=args.tls_certfile,
+            tls_keyfile=args.tls_keyfile,
+        )
+
     service = build_service(
         catalog_path=args.catalog,
         evidence_path=args.evidence_db,
@@ -123,8 +134,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             run_stdio(service)
             return 0
         if args.command == "serve":
-            if not 0.0 <= args.shutdown_drain_warning_seconds <= 300.0:
-                raise ValueError("shutdown drain warning must be between 0 and 300 seconds")
             server = create_server(
                 service, host=args.host, port=args.port,
                 bearer_token=os.environ.get(args.bearer_token_env),
