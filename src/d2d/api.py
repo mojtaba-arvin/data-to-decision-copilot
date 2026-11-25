@@ -4,17 +4,65 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import json
+import logging
 import secrets
 import socket
 import ssl
+import time
+from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from threading import BoundedSemaphore
+from threading import BoundedSemaphore, Condition
 from typing import Any, cast
 from urllib.parse import unquote
 
 from d2d.application import CopilotService
 
 _MAX_BODY_BYTES = 8_192
+_logger = logging.getLogger(__name__)
+
+
+class _DrainableThreadingHTTPServer(ThreadingHTTPServer):
+    daemon_threads = False
+    block_on_close = True
+
+    def __init__(
+        self,
+        server_address: tuple[str, int],
+        handler: type[BaseHTTPRequestHandler],
+        *,
+        socket_timeout: float,
+    ) -> None:
+        self._socket_timeout = socket_timeout
+        self._active_condition = Condition()
+        self._active_handlers = 0
+        super().__init__(server_address, handler)
+
+    def handler_started(self) -> None:
+        with self._active_condition:
+            self._active_handlers += 1
+
+    def handler_finished(self) -> None:
+        with self._active_condition:
+            self._active_handlers -= 1
+            self._active_condition.notify_all()
+
+    def wait_for_idle(self, timeout_seconds: float) -> bool:
+        """Wait at most timeout_seconds for active request handlers to finish."""
+        if timeout_seconds < 0:
+            raise ValueError("shutdown drain timeout must not be negative")
+        deadline = time.monotonic() + timeout_seconds
+        with self._active_condition:
+            while self._active_handlers:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return False
+                self._active_condition.wait(remaining)
+        return True
+
+    def get_request(self) -> tuple[socket.socket, Any]:
+        connection, address = super().get_request()
+        connection.settimeout(self._socket_timeout)
+        return connection, address
 
 
 def create_server(
@@ -24,7 +72,7 @@ def create_server(
     bearer_token: str | None = None,
     tls_certfile: str | None = None,
     tls_keyfile: str | None = None,
-) -> ThreadingHTTPServer:
+) -> _DrainableThreadingHTTPServer:
     """Create a loopback or TLS-protected remote server.
 
     request_socket_timeout_seconds bounds idle socket I/O while reading or
@@ -50,6 +98,28 @@ def create_server(
     query_slots = BoundedSemaphore(max_concurrent_queries)
 
     class Handler(BaseHTTPRequestHandler):
+        def setup(self) -> None:
+            super().setup()
+            cast(_DrainableThreadingHTTPServer, self.server).handler_started()
+
+        def finish(self) -> None:
+            try:
+                super().finish()
+            finally:
+                cast(_DrainableThreadingHTTPServer, self.server).handler_finished()
+
+        def _begin_request(self) -> None:
+            self._request_started_at = time.monotonic()
+            if self.path.startswith("/v1/traces/"):
+                self._route_label = "/v1/traces/{trace_id}"
+            elif self.path in {
+                "/health", "/ready", "/v1/schema", "/v1/history",
+                "/v1/traces", "/v1/query", "/v1/decision",
+            }:
+                self._route_label = self.path
+            else:
+                self._route_label = "/unknown"
+
         def _send(self, status: int, payload: dict[str, object]) -> None:
             body = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
             self.send_response(status)
@@ -60,6 +130,18 @@ def create_server(
                 self.send_header("WWW-Authenticate", 'Bearer realm="d2d"')
             self.end_headers()
             self.wfile.write(body)
+            _logger.info(json.dumps({
+                "timestamp": datetime.now(UTC).isoformat(),
+                "event": "http_request",
+                "method": getattr(self, "command", "UNKNOWN"),
+                "route": getattr(self, "_route_label", "/unknown"),
+                "status": status,
+                "duration_ms": round(
+                    (time.monotonic() - getattr(self, "_request_started_at", time.monotonic()))
+                    * 1000,
+                    2,
+                ),
+            }, separators=(",", ":")))
 
         def _authorized(self) -> bool:
             if bearer_token is None:
@@ -72,6 +154,7 @@ def create_server(
             return False
 
         def do_GET(self) -> None:
+            self._begin_request()
             if not self._authorized():
                 return
             if self.path == "/health":
@@ -107,6 +190,7 @@ def create_server(
                 self._send(404, {"error": "not_found"})
 
         def do_POST(self) -> None:
+            self._begin_request()
             if not self._authorized():
                 return
             if self.path not in ("/v1/query", "/v1/decision"):
@@ -177,14 +261,9 @@ def create_server(
 
     handler: type[BaseHTTPRequestHandler] = Handler
 
-    class BoundedRequestThreadingHTTPServer(ThreadingHTTPServer):
-        def get_request(self) -> tuple[socket.socket, Any]:
-            connection, address = super().get_request()
-            # This bounds idle socket reads/writes, not total query execution time.
-            connection.settimeout(request_socket_timeout_seconds)
-            return connection, address
-
-    server = BoundedRequestThreadingHTTPServer((host, port), handler)
+    server = _DrainableThreadingHTTPServer(
+        (host, port), handler, socket_timeout=request_socket_timeout_seconds
+    )
     if tls_certfile is not None and tls_keyfile is not None:
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         context.minimum_version = ssl.TLSVersion.TLSv1_2

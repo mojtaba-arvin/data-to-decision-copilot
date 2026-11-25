@@ -4,9 +4,12 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import os
+import signal
 from collections.abc import Sequence
 from pathlib import Path
+from threading import Thread
 
 from d2d.api import create_server
 from d2d.application import build_service
@@ -39,6 +42,10 @@ def _parser() -> argparse.ArgumentParser:
         if name == "serve":
             command.add_argument("--host", default="127.0.0.1")
             command.add_argument("--port", type=int, default=8765)
+            command.add_argument(
+                "--shutdown-drain-warning-seconds", type=float, default=10.0,
+                help="Time before warning that active REST requests are still draining",
+            )
             command.add_argument(
                 "--bearer-token-env", default="D2D_REST_BEARER_TOKEN",
                 help="Environment variable containing a 32+ character bearer token for authenticated access",
@@ -75,20 +82,52 @@ def main(argv: Sequence[str] | None = None) -> int:
             run_stdio(service)
             return 0
         if args.command == "serve":
+            if not 0.0 <= args.shutdown_drain_warning_seconds <= 300.0:
+                raise ValueError("shutdown drain warning must be between 0 and 300 seconds")
             server = create_server(
                 service, host=args.host, port=args.port,
                 bearer_token=os.environ.get(args.bearer_token_env),
                 tls_certfile=args.tls_certfile, tls_keyfile=args.tls_keyfile,
             )
+            logging.basicConfig(level=logging.INFO, format="%(message)s")
+            serve_thread = Thread(
+                target=server.serve_forever, name="d2d-rest-acceptor", daemon=True
+            )
+            previous_sigint = signal.signal(signal.SIGINT, signal.default_int_handler)
+            previous_sigterm = signal.signal(signal.SIGTERM, signal.default_int_handler)
             try:
+                serve_thread.start()
                 scheme = "https" if args.tls_certfile else "http"
                 print(f"REST API listening on {scheme}://{args.host}:{args.port}")
-                server.serve_forever()
+                while serve_thread.is_alive():
+                    serve_thread.join(timeout=0.5)
             except KeyboardInterrupt:
                 pass
             finally:
-                server.server_close()
-            return 0
+                signal.signal(signal.SIGINT, signal.SIG_IGN)
+                signal.signal(signal.SIGTERM, signal.SIG_IGN)
+                try:
+                    if serve_thread.is_alive():
+                        server.shutdown()
+                        serve_thread.join(timeout=5.0)
+                    drained = (
+                        not serve_thread.is_alive()
+                        and server.wait_for_idle(args.shutdown_drain_warning_seconds)
+                    )
+                    server.server_close()
+                    if not drained:
+                        logging.getLogger("d2d.shutdown").warning(
+                            json.dumps({
+                                "event": "shutdown_drain_exceeded_warning_threshold",
+                                "active_requests": "at_least_one",
+                                "warning_after_seconds": args.shutdown_drain_warning_seconds,
+                                "policy": "wait_for_requests_before_closing_service",
+                            }, separators=(",", ":"))
+                        )
+                finally:
+                    signal.signal(signal.SIGINT, previous_sigint)
+                    signal.signal(signal.SIGTERM, previous_sigterm)
+            return 0 if drained else 1
     finally:
         service.close()
     return 2

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import socket
 import threading
 from io import StringIO
@@ -314,4 +315,125 @@ def test_rest_server_validates_socket_timeout_bounds(catalog: Path, tmp_path: Pa
         with pytest.raises(ValueError, match="request_socket_timeout_seconds"):
             create_server(service, request_socket_timeout_seconds=121)
     finally:
+        service.close()
+
+
+
+def test_rest_request_logs_are_structured_and_exclude_question_payload(
+    catalog: Path,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = build_service(
+        catalog_path=str(catalog),
+        evidence_path=str(tmp_path / "redacted-log-evidence.sqlite"),
+    )
+    async def fake_query(question: str) -> dict[str, object]:
+        return {"question": question, "rows": [[2]]}
+
+    monkeypatch.setattr(service, "query", fake_query)
+    server = create_server(service, port=0)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    question = "TOP-SECRET-QUESTION-DO-NOT-LOG"
+    request = Request(
+        f"http://{server.server_address[0]}:{server.server_port}/v1/query",
+        data=json.dumps({"question": question}).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with (
+            caplog.at_level(logging.INFO, logger="d2d.api"),
+            urlopen(request, timeout=5) as response,
+        ):
+            assert response.status == 200
+            response.read()
+        messages = [
+            record.getMessage()
+            for record in caplog.records
+            if record.name == "d2d.api" and record.getMessage()
+        ]
+        assert len(messages) == 1
+        event = json.loads(messages[0])
+        assert event["event"] == "http_request"
+        assert event["method"] == "POST"
+        assert event["route"] == "/v1/query"
+        assert event["status"] == 200
+        assert isinstance(event["duration_ms"], (int, float))
+        assert question not in messages[0]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+        service.close()
+
+
+def test_rest_server_tracks_active_requests_before_close(
+    catalog: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service = build_service(
+        catalog_path=str(catalog),
+        evidence_path=str(tmp_path / "drain-evidence.sqlite"),
+    )
+    started = threading.Event()
+    release = threading.Event()
+
+    async def blocked_query(question: str) -> dict[str, object]:
+        started.set()
+        await asyncio.to_thread(release.wait, 5)
+        return {"question": question, "rows": [[2]]}
+
+    monkeypatch.setattr(service, "query", blocked_query)
+    server = create_server(service, port=0)
+    serve_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    serve_thread.start()
+    request = Request(
+        f"http://{server.server_address[0]}:{server.server_port}/v1/query",
+        data=json.dumps({"question": "count rows in orders"}).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    request_errors: list[Exception] = []
+    close_started = threading.Event()
+
+    def send_request() -> None:
+        try:
+            with urlopen(request, timeout=5) as response:
+                response.read()
+        except Exception as exc:
+            request_errors.append(exc)
+
+    request_thread = threading.Thread(target=send_request)
+    request_thread.start()
+    try:
+        assert started.wait(5)
+        server.shutdown()
+        serve_thread.join(timeout=5)
+        assert not serve_thread.is_alive()
+        assert not server.wait_for_idle(0.01)
+
+        def close_server() -> None:
+            close_started.set()
+            server.server_close()
+
+        close_thread = threading.Thread(target=close_server)
+        close_thread.start()
+        assert close_started.wait(5)
+        close_thread.join(timeout=0.05)
+        assert close_thread.is_alive()
+
+        release.set()
+        request_thread.join(timeout=5)
+        close_thread.join(timeout=5)
+        assert not request_thread.is_alive()
+        assert not close_thread.is_alive()
+        assert request_errors == []
+        assert server.wait_for_idle(5)
+    finally:
+        release.set()
+        server.server_close()
+        serve_thread.join(timeout=5)
+        request_thread.join(timeout=5)
         service.close()
