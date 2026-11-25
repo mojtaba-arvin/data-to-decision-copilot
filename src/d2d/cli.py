@@ -6,17 +6,25 @@ import asyncio
 import json
 import os
 from collections.abc import Sequence
+from pathlib import Path
 
 from d2d.api import create_server
 from d2d.application import build_service
+from d2d.demo import create_demo_catalog
 from d2d.mcp import run_stdio
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="d2d", description="Evidence-backed read-only analytics")
     subparsers = parser.add_subparsers(dest="command", required=True)
-    for name in ("query", "serve", "mcp", "schema"):
+    for name in ("query", "serve", "mcp", "schema", "demo"):
         command = subparsers.add_parser(name)
+        if name == "demo":
+            command.add_argument(
+                "--output", type=Path, default=Path("analytics.duckdb"),
+                help="New catalog path (must not already exist)",
+            )
+            continue
         command.add_argument("--catalog", required=True, help="DuckDB catalog path")
         command.add_argument("--evidence-db", default="d2d-evidence.sqlite")
         command.add_argument("--history-db", default="d2d-history.sqlite")
@@ -42,6 +50,11 @@ def _parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    if args.command == "demo":
+        destination = create_demo_catalog(args.output)
+        print(f"Created synthetic demo catalog: {destination}")
+        return 0
+
     service = build_service(
         catalog_path=args.catalog,
         evidence_path=args.evidence_db,

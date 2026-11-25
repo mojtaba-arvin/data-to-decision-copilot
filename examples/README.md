@@ -7,7 +7,7 @@ From the repository root:
 
 ```bash
 uv sync --locked --all-groups
-uv run python examples/create_demo_catalog.py --output ./analytics.duckdb
+d2d demo --output ./analytics.duckdb
 d2d schema --catalog ./analytics.duckdb
 d2d query --catalog ./analytics.duckdb --question "count rows in sales"
 d2d query --catalog ./analytics.duckdb --question "sum amount by region in sales"
@@ -21,5 +21,5 @@ Expected count: 4 rows. Expected grouped totals:
 
 The CLI query path uses the same schema-grounded planner, SQL guard, bounded
 read-only executor, and execution-derived Evidence journal as the REST and MCP
-interfaces. The database generator itself is a setup utility and writes only
-the explicitly selected demo catalog.
+interfaces. The generator refuses to overwrite an existing path and publishes a completed
+catalog atomically. The database contains only synthetic rows.
