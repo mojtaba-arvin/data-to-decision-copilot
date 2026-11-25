@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" dir="ltr">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -9,6 +9,7 @@
     body { margin: 0; background: Canvas; color: CanvasText; }
     main { max-width: 1080px; margin: 0 auto; padding: 2rem 1rem 4rem; }
     header { display:flex; align-items:center; justify-content:space-between; gap:1rem; }
+    .header-actions { display:flex; align-items:center; gap:.75rem; }
     .status { border:1px solid color-mix(in srgb, CanvasText 25%, transparent); border-radius:99px; padding:.25rem .7rem; }
     form { display:flex; gap:.75rem; margin:2rem 0; }
     input { flex:1; min-width:0; padding:.9rem; border:1px solid #8888; border-radius:.7rem; background:Canvas; color:CanvasText; }
@@ -16,7 +17,7 @@
     button:disabled { opacity:.5; cursor:wait; }
     section { border:1px solid #8885; border-radius:1rem; padding:1rem; margin:1rem 0; overflow:auto; }
     table { border-collapse:collapse; width:100%; }
-    th,td { text-align:left; border-bottom:1px solid #8885; padding:.6rem; }
+    th,td { text-align:start; border-bottom:1px solid #8885; padding:.6rem; }
     pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:.85rem; }
     .muted { opacity:.7; } .error { color:#dc2626; }
     @media(max-width:600px) { form { flex-direction:column; } header { align-items:flex-start; flex-direction:column; } }
@@ -25,45 +26,147 @@
 <body>
 <main>
   <header>
-    <div><h1>Data-to-Decision Copilot</h1><p class="muted">Read-only analytics · Evidence-backed answers</p></div>
-    <span id="status" class="status">Checking API…</span>
+    <div><h1 id="page-title">Data-to-Decision Copilot</h1><p id="tagline" class="muted">Read-only analytics · Evidence-backed answers</p></div>
+    <div class="header-actions">
+      <button id="language-toggle" type="button" aria-label="Switch to Persian">فارسی</button>
+      <span id="status" class="status">Checking API…</span>
+    </div>
   </header>
   <form id="query-form">
     <input id="question" name="question" required maxlength="4000" placeholder="Ask in English or Persian…">
     <button id="submit" type="submit">Run query</button>
   </form>
   <p id="message" role="status" class="muted">Queries are translated into typed plans and pass through the read-only SQL guard.</p>
-  <section><h2>Result</h2><div id="result" class="muted">No query yet.</div></section>
-  <section><h2>Evidence & execution metadata</h2><pre id="trace" class="muted">Evidence metadata will appear here.</pre></section>
+  <section><h2 id="result-title">Result</h2><div id="result" class="muted">No query yet.</div></section>
+  <section><h2 id="evidence-title">Evidence & execution metadata</h2><pre id="trace" class="muted">Evidence metadata will appear here.</pre></section>
   <section id="decision-section" hidden>
-    <h2>Submit a decision proposal</h2>
-    <p class="muted">This is a human-authored proposal, not an AI-generated recommendation. The server verifies evidence lineage, current schema, numeric fact grounding, and policy. It does not perform general semantic entailment.</p>
+    <h2 id="decision-title">Submit a decision proposal</h2>
+    <p id="decision-description" class="muted">This is a human-authored proposal, not an AI-generated recommendation. The server verifies evidence lineage, current schema, numeric fact grounding, and policy. It does not perform general semantic entailment.</p>
     <form id="decision-form">
-      <label>Proposed action <input id="decision-action" required maxlength="1000"></label>
-      <label>Rationale <input id="decision-rationale" required maxlength="2000"></label>
-      <label>Evidence-backed claim <input id="decision-claim" required maxlength="2000"></label>
-      <label>Alternative action <input id="decision-alternative" required maxlength="1000"></label>
-      <label>Alternative trade-off <input id="decision-tradeoff" required maxlength="1000"></label>
-      <label>Condition that would reverse this decision <input id="decision-reversal" required maxlength="1000"></label>
+      <label id="action-label">Proposed action <input id="decision-action" required maxlength="1000"></label>
+      <label id="rationale-label">Rationale <input id="decision-rationale" required maxlength="2000"></label>
+      <label id="claim-label">Evidence-backed claim <input id="decision-claim" required maxlength="2000"></label>
+      <label id="alternative-label">Alternative action <input id="decision-alternative" required maxlength="1000"></label>
+      <label id="tradeoff-label">Alternative trade-off <input id="decision-tradeoff" required maxlength="1000"></label>
+      <label id="reversal-label">Condition that would reverse this decision <input id="decision-reversal" required maxlength="1000"></label>
       <button id="decision-submit" type="submit">Verify and save decision</button>
     </form>
     <p id="decision-message" role="status" class="muted">Run a query before submitting a proposal.</p>
   </section>
-  <section><h2>Recent questions</h2><ol id="history"><li class="muted">No history yet.</li></ol></section>
-  <section><h2>DecisionTrace history</h2><ol id="decision-traces"><li class="muted">No persisted decision traces.</li></ol><pre id="decision-trace-detail" class="muted">DecisionTrace details will appear here when a decision has been produced and persisted.</pre></section>
+  <section><h2 id="history-title">Recent questions</h2><ol id="history"><li class="muted">No history yet.</li></ol></section>
+  <section><h2 id="traces-title">DecisionTrace history</h2><ol id="decision-traces"><li class="muted">No persisted decision traces.</li></ol><pre id="decision-trace-detail" class="muted">DecisionTrace details will appear here when a decision has been produced and persisted.</pre></section>
 </main>
 <script>
 const $ = (id) => document.getElementById(id);
+let language = 'en';
+const translations = {
+  en: {
+    toggle: 'فارسی', toggleLabel: 'Switch to Persian', title: 'Data-to-Decision Copilot',
+    tagline: 'Read-only analytics · Evidence-backed answers', placeholder: 'Ask in English or Persian…',
+    runQuery: 'Run query', initialMessage: 'Queries are translated into typed plans and pass through the read-only SQL guard.',
+    result: 'Result', noQuery: 'No query yet.', evidence: 'Evidence & execution metadata',
+    decisionTitle: 'Submit a decision proposal',
+    decisionDescription: 'This is a human-authored proposal, not an AI-generated recommendation. The server verifies evidence lineage, current schema, numeric fact grounding, and policy. It does not perform general semantic entailment.',
+    action: 'Proposed action', rationale: 'Rationale', claim: 'Evidence-backed claim',
+    alternative: 'Alternative action', tradeoff: 'Alternative trade-off',
+    reversal: 'Condition that would reverse this decision', saveDecision: 'Verify and save decision',
+    decisionInitial: 'Run a query before submitting a proposal.', history: 'Recent questions', noHistory: 'No history yet.',
+    traces: 'DecisionTrace history', noTraces: 'No persisted DecisionTrace records. Query execution alone does not generate a decision.',
+    traceUnavailable: 'DecisionTrace journal unavailable or failed integrity verification.',
+    traceDetail: 'DecisionTrace details will appear here when a decision has been produced and persisted.',
+    checking: 'Checking API…', ready: 'API ready', notReady: 'API not ready', unavailable: 'API unavailable',
+    executing: 'Executing…', queryCompleted: 'Query completed with persisted evidence.',
+    truncated: 'Result is truncated by configured limits.', queryTimeout: 'Query timed out. Reduce the query scope or retry later.',
+    workerUnavailable: 'Query worker is unavailable. Check the service process and retry.',
+    storageBusy: 'Storage is busy. Wait briefly and retry.', storageUnavailable: 'Storage is unavailable or full. Check disk space and database permissions.',
+    queryFailed: 'The query could not be completed. Check the request and service logs.',
+    decisionVerifying: 'Verifying proposal and evidence…', runFirst: 'Run a query first.',
+    decisionSaved: 'Decision verified and saved.', decisionRejected: 'Decision proposal was rejected by validation or policy.',
+    traceVerificationFailed: 'Trace verification failed.',
+    traceProposal: 'Proposal will be linked to evidence', decisionSequence: 'Sequence'
+  },
+  fa: {
+    toggle: 'English', toggleLabel: 'تغییر زبان به انگلیسی', title: 'دستیار تبدیل داده به تصمیم',
+    tagline: 'تحلیل فقط‌خواندنی · پاسخ‌های مبتنی بر شواهد', placeholder: 'سؤال خود را به فارسی یا انگلیسی بنویسید…',
+    runQuery: 'اجرای پرس‌وجو', initialMessage: 'پرس‌وجو به طرح ساخت‌یافته تبدیل و از کنترل‌گر SQL فقط‌خواندنی عبور می‌کند.',
+    result: 'نتیجه', noQuery: 'هنوز پرس‌وجویی اجرا نشده است.', evidence: 'شواهد و اطلاعات اجرا',
+    decisionTitle: 'ثبت پیشنهاد تصمیم',
+    decisionDescription: 'این پیشنهاد را انسان ارائه می‌کند، نه هوش مصنوعی. سرور ارتباط با شواهد، طرح‌واره فعلی، انطباق عددی ادعاها و سیاست را بررسی می‌کند؛ اما استنتاج معنایی عمومی انجام نمی‌دهد.',
+    action: 'اقدام پیشنهادی', rationale: 'دلیل تصمیم', claim: 'ادعای مبتنی بر شواهد',
+    alternative: 'اقدام جایگزین', tradeoff: 'هزینه یا پیامد اقدام جایگزین',
+    reversal: 'شرطی که باعث بازنگری این تصمیم می‌شود', saveDecision: 'بررسی و ذخیره تصمیم',
+    decisionInitial: 'برای ثبت پیشنهاد ابتدا یک پرس‌وجو اجرا کنید.', history: 'پرس‌وجوهای اخیر', noHistory: 'هنوز سابقه‌ای ثبت نشده است.',
+    traces: 'تاریخچه DecisionTrace', noTraces: 'هنوز DecisionTrace ذخیره‌شده‌ای وجود ندارد. اجرای پرس‌وجو به‌تنهایی تصمیم تولید نمی‌کند.',
+    traceUnavailable: 'دفتر DecisionTrace در دسترس نیست یا اعتبارسنجی یکپارچگی آن ناموفق بوده است.',
+    traceDetail: 'پس از تولید و ذخیره تصمیم، جزئیات DecisionTrace در این قسمت نمایش داده می‌شود.',
+    checking: 'در حال بررسی API…', ready: 'API آماده است', notReady: 'API آماده نیست', unavailable: 'API در دسترس نیست',
+    executing: 'در حال اجرا…', queryCompleted: 'پرس‌وجو با ثبت شواهد تکمیل شد.',
+    truncated: 'نتیجه مطابق محدودیت‌های تنظیم‌شده کوتاه شده است.', queryTimeout: 'زمان اجرای پرس‌وجو تمام شد. دامنه پرس‌وجو را محدود کنید یا بعداً دوباره تلاش کنید.',
+    workerUnavailable: 'پردازشگر پرس‌وجو در دسترس نیست. وضعیت سرویس را بررسی و دوباره تلاش کنید.',
+    storageBusy: 'پایگاه داده مشغول است. کمی صبر کنید و دوباره تلاش کنید.',
+    storageUnavailable: 'ذخیره‌سازی در دسترس نیست یا فضای دیسک کافی نیست. فضا و مجوزهای پایگاه داده را بررسی کنید.',
+    queryFailed: 'اجرای پرس‌وجو ناموفق بود. درخواست و گزارش‌های سرویس را بررسی کنید.',
+    decisionVerifying: 'در حال بررسی پیشنهاد و شواهد…', runFirst: 'ابتدا یک پرس‌وجو اجرا کنید.',
+    decisionSaved: 'تصمیم بررسی و ذخیره شد.', decisionRejected: 'پیشنهاد تصمیم توسط اعتبارسنجی یا سیاست رد شد.',
+    traceVerificationFailed: 'اعتبارسنجی DecisionTrace ناموفق بود.',
+    traceProposal: 'این پیشنهاد به شناسه شاهد متصل می‌شود', decisionSequence: 'شماره توالی'
+  }
+};
+const tr = (key) => translations[language][key];
+function applyLanguage() {
+  document.title = tr('title');
+  document.documentElement.lang = language;
+  document.documentElement.dir = language === 'fa' ? 'rtl' : 'ltr';
+  $('language-toggle').textContent = tr('toggle');
+  $('language-toggle').setAttribute('aria-label', tr('toggleLabel'));
+  $('page-title').textContent = tr('title');
+  $('tagline').textContent = tr('tagline');
+  $('question').placeholder = tr('placeholder');
+  $('submit').textContent = tr('runQuery');
+  $('result-title').textContent = tr('result');
+  $('evidence-title').textContent = tr('evidence');
+  $('decision-title').textContent = tr('decisionTitle');
+  $('decision-description').textContent = tr('decisionDescription');
+  $('action-label').childNodes[0].textContent = tr('action') + ' ';
+  $('rationale-label').childNodes[0].textContent = tr('rationale') + ' ';
+  $('claim-label').childNodes[0].textContent = tr('claim') + ' ';
+  $('alternative-label').childNodes[0].textContent = tr('alternative') + ' ';
+  $('tradeoff-label').childNodes[0].textContent = tr('tradeoff') + ' ';
+  $('reversal-label').childNodes[0].textContent = tr('reversal') + ' ';
+  $('decision-submit').textContent = tr('saveDecision');
+  $('history-title').textContent = tr('history');
+  $('traces-title').textContent = tr('traces');
+  if (!lastQuery) {
+    $('result').textContent = tr('noQuery');
+    $('trace').textContent = tr('traceDetail');
+  }
+  if (apiStatusKey) $('status').textContent = tr(apiStatusKey);
+  if (messageKey) $('message').textContent = tr(messageKey);
+  if (decisionMessageKey) $('decision-message').textContent = tr(decisionMessageKey);
+}
+$('language-toggle').addEventListener('click', () => {
+  language = language === 'en' ? 'fa' : 'en';
+  applyLanguage();
+});
+let apiStatusKey = 'checking';
+let messageKey = 'initialMessage';
+let decisionMessageKey = 'decisionInitial';
 async function refresh() {
   try {
     const health = await fetch('/health');
     if (!health.ok) throw new Error();
     const ready = await fetch('/ready');
-    $('status').textContent = ready.ok ? 'API ready' : 'API not ready';
-  } catch { $('status').textContent = 'API unavailable'; }
+    apiStatusKey = ready.ok ? 'ready' : 'notReady'; $('status').textContent = tr(apiStatusKey);
+  } catch { apiStatusKey = 'unavailable'; $('status').textContent = tr(apiStatusKey); }
   try {
     const r = await fetch('/v1/history'); const data = await r.json();
-    $('history').innerHTML = '';
+    $('history').replaceChildren();
+    if (!(data.items || []).length) {
+      const empty = document.createElement('li');
+      empty.className = 'muted';
+      empty.textContent = tr('noHistory');
+      $('history').append(empty);
+    }
     for (const item of data.items || []) {
       const li = document.createElement('li');
       const button = document.createElement('button'); button.textContent = item.question;
@@ -79,7 +182,7 @@ async function refresh() {
     if (!(data.items || []).length) {
       const item = document.createElement('li');
       item.className = 'muted';
-      item.textContent = 'No persisted DecisionTrace records. Query execution alone does not generate a decision.';
+      item.textContent = tr('noTraces');
       $('decision-traces').append(item);
     }
     for (const trace of data.items || []) {
@@ -91,18 +194,20 @@ async function refresh() {
         const payload = await detail.json();
         $('decision-trace-detail').textContent = detail.ok
           ? JSON.stringify(payload, null, 2)
-          : 'Trace verification failed: ' + (payload.error || detail.status);
+          : tr('traceVerificationFailed');
       });
       li.append(button);
       $('decision-traces').append(li);
     }
   } catch {
-    $('decision-traces').textContent = 'DecisionTrace journal unavailable or failed integrity verification.';
+    $('decision-traces').textContent = tr('traceUnavailable');
   }
 }
 let lastQuery = null;
 $('query-form').addEventListener('submit', async (event) => {
-  event.preventDefault(); lastQuery = null; $('decision-section').hidden = true; $('submit').disabled = true; $('message').textContent = 'Executing…';
+  event.preventDefault(); lastQuery = null; $('decision-section').hidden = true; $('submit').disabled = true;
+  messageKey = 'executing'; $('message').textContent = tr(messageKey); $('message').className = 'muted';
+  $('result').textContent = tr('noQuery'); $('trace').textContent = tr('traceDetail');
   try {
     const response = await fetch('/v1/query', {
       method: 'POST', headers: {'Content-Type':'application/json'},
@@ -119,23 +224,24 @@ $('query-form').addEventListener('submit', async (event) => {
     table.append(tbody); $('result').replaceChildren(table);
     lastQuery = {question: data.question, evidence_id: data.evidence_id};
     $('decision-section').hidden = false;
-    $('decision-message').textContent = 'Proposal will be linked to evidence ' + data.evidence_id + '.';
+    decisionMessageKey = null; $('decision-message').textContent = tr('traceProposal') + ' ' + data.evidence_id + '.';
     $('trace').textContent = JSON.stringify({
       evidence_id:data.evidence_id, evidence_sequence:data.evidence_sequence,
       schema_fingerprint:data.schema_fingerprint, planner_reference:data.planner_reference,
       prompt_sha256:data.prompt_sha256, sql:data.sql, parameter_count:data.parameter_count,
       truncated:data.truncated
     }, null, 2);
-    $('message').textContent = data.truncated ? 'Result is truncated by configured limits.' : 'Query completed with persisted evidence.';
+    messageKey = data.truncated ? 'truncated' : 'queryCompleted'; $('message').textContent = tr(messageKey);
     await refresh();
-  } catch (error) { $('message').textContent = error.message; $('message').className = 'error'; }
+  } catch (error) { const code = error.message; messageKey = ({query_timeout:'queryTimeout',query_worker_unavailable:'workerUnavailable',storage_busy:'storageBusy',storage_unavailable:'storageUnavailable'}[code] || 'queryFailed'); $('message').textContent = tr(messageKey); $('message').className = 'error'; }
   finally { $('submit').disabled = false; }
 });
 $('decision-form').addEventListener('submit', async (event) => {
   event.preventDefault();
-  if (!lastQuery) { $('decision-message').textContent = 'Run a query first.'; return; }
+  if (!lastQuery) { decisionMessageKey = 'runFirst'; $('decision-message').textContent = tr(decisionMessageKey); return; }
   $('decision-submit').disabled = true;
-  $('decision-message').textContent = 'Verifying proposal and evidence…';
+  decisionMessageKey = 'decisionVerifying'; $('decision-message').textContent = tr(decisionMessageKey);
+  $('decision-message').className = 'muted';
   try {
     const response = await fetch('/v1/decision', {
       method: 'POST', headers: {'Content-Type':'application/json'},
@@ -159,14 +265,15 @@ $('decision-form').addEventListener('submit', async (event) => {
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Decision rejected');
-    $('decision-message').textContent = 'Decision verified and saved as ' + data.trace.trace_id + ' (sequence ' + data.sequence + ').';
+    decisionMessageKey = null; $('decision-message').textContent = tr('decisionSaved') + ' ' + data.trace.trace_id + ' (' + tr('decisionSequence') + ' ' + data.sequence + ').';
     $('decision-trace-detail').textContent = JSON.stringify(data.trace, null, 2);
     await refresh();
   } catch (error) {
-    $('decision-message').textContent = error.message;
+    decisionMessageKey = 'decisionRejected'; $('decision-message').textContent = tr(decisionMessageKey);
     $('decision-message').className = 'error';
   } finally { $('decision-submit').disabled = false; }
 });
+applyLanguage();
 refresh();
 </script>
 </body>
