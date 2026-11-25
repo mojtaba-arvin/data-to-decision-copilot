@@ -6,13 +6,13 @@ import os
 import sqlite3
 import stat
 from pathlib import Path
-
-import pytest
 from typing import Any
 
+import pytest
+
+from d2d.core import journal_chain
 from d2d.core.evidence import create_execution_evidence
 from d2d.core.evidence_store import SQLiteEvidenceStore
-from d2d.core import journal_chain
 from d2d.core.journal_chain import GENESIS, restore_archive_chain, verify_archive_chain
 from d2d.core.sql_executor import QueryResult
 
