@@ -344,7 +344,7 @@ def _write_trace_segment_manifest(
             separators=(",", ":"),
             allow_nan=False,
         ).encode("utf-8")
-        + b"\\n"
+        + b"\n"
     )
     return digest, str(rows[-1][2])
 
