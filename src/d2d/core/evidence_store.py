@@ -45,7 +45,8 @@ def _read_checkpoint(connection: sqlite3.Connection) -> tuple[int, str]:
         digest = metadata["checkpoint_sha256"]
         if sequence < 0 or len(digest) != 64:
             raise ValueError
-        int(digest, 16)
+        if any(character not in "0123456789abcdef" for character in digest):
+            raise ValueError
     except ValueError as exc:
         raise RuntimeError("invalid evidence journal checkpoint") from exc
     if sequence == 0 and digest != GENESIS:
@@ -249,7 +250,9 @@ class SQLiteEvidenceStore:
             raise ValueError(f"cannot back up an invalid evidence journal: {report.error}")
         return create_verified_backup(
             self.path, destination,
-            verify=lambda path: SQLiteEvidenceStore(path).verify(),
+            verify=lambda path: SQLiteEvidenceStore(
+                path, trusted_checkpoint=self.trusted_checkpoint
+            ).verify(),
             table_name="evidence_journal",
         )
 
