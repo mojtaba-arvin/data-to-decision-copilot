@@ -1,8 +1,11 @@
 import json
+import os
+import stat
 from pathlib import Path
 
 import pytest
 
+from d2d.core import journal_archive
 from d2d.core.evidence import create_execution_evidence
 from d2d.core.evidence_store import SQLiteEvidenceStore
 from d2d.core.journal_archive import (
@@ -227,3 +230,30 @@ def test_restore_rejects_tampered_archive_without_publishing(tmp_path: Path):
             verify=lambda path: SQLiteEvidenceStore(path).verify(),
         )
     assert not destination.exists()
+
+
+def test_manifest_publication_syncs_file_and_parent_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    snapshot = tmp_path / "snapshot.sqlite"
+    manifest = tmp_path / "snapshot.manifest.json"
+    make_store(tmp_path / "live.sqlite").backup(snapshot)
+
+    synced_descriptors: list[bool] = []
+    real_fsync = os.fsync
+
+    def record_fsync(descriptor: int) -> None:
+        synced_descriptors.append(stat.S_ISDIR(os.fstat(descriptor).st_mode))
+        real_fsync(descriptor)
+
+    monkeypatch.setattr(journal_archive.os, "fsync", record_fsync)
+    report = create_archive_manifest(
+        snapshot,
+        manifest,
+        journal_kind="evidence",
+        schema_version=1,
+        verify=lambda path: SQLiteEvidenceStore(path).verify(),
+    )
+
+    assert report.valid
+    assert synced_descriptors == [False, True]

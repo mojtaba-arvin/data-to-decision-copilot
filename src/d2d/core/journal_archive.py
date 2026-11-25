@@ -187,6 +187,12 @@ def create_archive_manifest(
             os.fsync(stream.fileno())
         os.link(temporary, target)
         temporary.unlink()
+        directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+        directory_fd = os.open(target.parent, directory_flags)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
     finally:
         temporary.unlink(missing_ok=True)
 
