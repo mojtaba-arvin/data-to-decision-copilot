@@ -65,7 +65,11 @@ curl --fail http://127.0.0.1:11434/api/tags
 ```
 
 The provider accepts loopback HTTP only. It does not download models, contact
-hosted inference services, or retry failed generations.
+hosted inference services, or retry failed generations. For REST deployments
+using `--provider ollama`, `/ready` performs a one-second metadata-only
+`/api/tags` probe and requires the exact configured model tag to be installed.
+This does not run inference or warm the model; execute a controlled query before
+relying on the model in production.
 
 ## 4. Run the application
 
