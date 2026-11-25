@@ -29,6 +29,31 @@ def _digest(value: Any) -> str:
     return hashlib.sha256(_canonical(value)).hexdigest()
 
 
+def _read_checkpoint(connection: sqlite3.Connection) -> tuple[int, str]:
+    rows = connection.execute(
+        "SELECT key, value FROM journal_meta WHERE key IN "
+        "('checkpoint_schema_version', 'checkpoint_sequence', 'checkpoint_sha256')"
+    ).fetchall()
+    metadata = {str(row["key"]): str(row["value"]) for row in rows}
+    expected = {"checkpoint_schema_version", "checkpoint_sequence", "checkpoint_sha256"}
+    if not metadata:
+        return 0, GENESIS
+    if set(metadata) != expected or metadata["checkpoint_schema_version"] != "1":
+        raise RuntimeError("invalid or unsupported evidence journal checkpoint metadata")
+    try:
+        sequence = int(metadata["checkpoint_sequence"])
+        digest = metadata["checkpoint_sha256"]
+        if sequence < 0 or len(digest) != 64:
+            raise ValueError
+        if any(character not in "0123456789abcdef" for character in digest):
+            raise ValueError
+    except ValueError as exc:
+        raise RuntimeError("invalid evidence journal checkpoint") from exc
+    if sequence == 0 and digest != GENESIS:
+        raise RuntimeError("genesis checkpoint hash mismatch")
+    return sequence, digest
+
+
 def _validate_evidence(evidence: Evidence) -> None:
     if evidence.status is not EvidenceStatus.EXECUTED:
         raise ValueError("only executed evidence can be persisted")
@@ -55,8 +80,14 @@ class VerificationReport:
 class SQLiteEvidenceStore:
     """Durable local journal; UPDATE and DELETE are blocked by SQLite triggers."""
 
-    def __init__(self, path: str | Path) -> None:
+    def __init__(
+        self,
+        path: str | Path,
+        *,
+        trusted_checkpoint: tuple[int, str] | None = None,
+    ) -> None:
         self.path = str(path)
+        self.trusted_checkpoint = trusted_checkpoint
         if self.path != ":memory:":
             Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         with closing(self._connect()) as connection:
@@ -100,6 +131,40 @@ class SQLiteEvidenceStore:
         connection.execute("PRAGMA busy_timeout = 10000")
         return connection
 
+    def initialize_checkpoint_metadata(self) -> tuple[int, str]:
+        """Install additive checkpoint metadata without changing journal records.
+
+        Existing databases remain genesis-anchored until a future verified rotation
+        atomically advances this checkpoint. This method never deletes or rewrites rows.
+        """
+        with closing(self._connect()) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                report = self.verify()
+                if not report.valid:
+                    raise ValueError(
+                        f"cannot initialize checkpoint metadata on an invalid journal: {report.error}"
+                    )
+                sequence, digest = _read_checkpoint(connection)
+                connection.execute(
+                    "INSERT OR IGNORE INTO journal_meta(key, value) VALUES (?, ?)",
+                    ("checkpoint_schema_version", "1"),
+                )
+                connection.execute(
+                    "INSERT OR IGNORE INTO journal_meta(key, value) VALUES (?, ?)",
+                    ("checkpoint_sequence", str(sequence)),
+                )
+                connection.execute(
+                    "INSERT OR IGNORE INTO journal_meta(key, value) VALUES (?, ?)",
+                    ("checkpoint_sha256", digest),
+                )
+                _read_checkpoint(connection)
+                connection.commit()
+                return sequence, digest
+            except Exception:
+                connection.rollback()
+                raise
+
     def append(self, evidence: Evidence) -> int:
         """Atomically append a validated record and return its sequence number."""
         _validate_evidence(evidence)
@@ -107,12 +172,34 @@ class SQLiteEvidenceStore:
         record_hash = hashlib.sha256(payload_text.encode("utf-8")).hexdigest()
         with closing(self._connect()) as connection:
             connection.execute("BEGIN IMMEDIATE")
+            checkpoint_sequence, checkpoint_hash = _read_checkpoint(connection)
+            if checkpoint_sequence > 0 and self.trusted_checkpoint != (
+                checkpoint_sequence, checkpoint_hash
+            ):
+                raise RuntimeError(
+                    "non-genesis evidence checkpoint requires a trusted archive checkpoint"
+                )
+            if self.trusted_checkpoint is not None and self.trusted_checkpoint != (
+                checkpoint_sequence, checkpoint_hash
+            ):
+                raise RuntimeError("trusted evidence checkpoint does not match journal metadata")
+            first = connection.execute(
+                "SELECT sequence, previous_sha256 FROM evidence_journal "
+                "ORDER BY sequence ASC LIMIT 1"
+            ).fetchone()
+            if first is not None and (
+                int(first["sequence"]) != checkpoint_sequence + 1
+                or str(first["previous_sha256"]) != checkpoint_hash
+            ):
+                raise RuntimeError("evidence journal checkpoint does not match first stored record")
             last = connection.execute(
                 "SELECT sequence, entry_sha256 FROM evidence_journal "
                 "ORDER BY sequence DESC LIMIT 1"
             ).fetchone()
-            sequence = 1 if last is None else int(last["sequence"]) + 1
-            previous = GENESIS if last is None else str(last["entry_sha256"])
+            sequence = (
+                checkpoint_sequence + 1 if last is None else int(last["sequence"]) + 1
+            )
+            previous = checkpoint_hash if last is None else str(last["entry_sha256"])
             entry_hash = _digest(
                 {
                     "schema_version": SCHEMA_VERSION,
@@ -163,13 +250,37 @@ class SQLiteEvidenceStore:
             raise ValueError(f"cannot back up an invalid evidence journal: {report.error}")
         return create_verified_backup(
             self.path, destination,
-            verify=lambda path: SQLiteEvidenceStore(path).verify(),
+            verify=lambda path: SQLiteEvidenceStore(
+                path, trusted_checkpoint=self.trusted_checkpoint
+            ).verify(),
             table_name="evidence_journal",
         )
 
     def verify(self) -> VerificationReport:
-        """Verify a complete genesis-anchored journal."""
-        return self.verify_segment(start_sequence=1, previous_sha256=GENESIS)
+        """Verify the active journal from its persisted predecessor checkpoint."""
+        with closing(self._connect()) as connection:
+            checkpoint_sequence, checkpoint_hash = _read_checkpoint(connection)
+            if checkpoint_sequence > 0 and self.trusted_checkpoint != (
+                checkpoint_sequence, checkpoint_hash
+            ):
+                return VerificationReport(
+                    False, 0, "non-genesis checkpoint requires a trusted archive checkpoint"
+                )
+            if self.trusted_checkpoint is not None and self.trusted_checkpoint != (
+                checkpoint_sequence, checkpoint_hash
+            ):
+                return VerificationReport(
+                    False, 0, "trusted checkpoint does not match journal metadata"
+                )
+            count = int(
+                connection.execute("SELECT COUNT(*) FROM evidence_journal").fetchone()[0]
+            )
+        if count == 0 and checkpoint_sequence > 0:
+            return VerificationReport(True, 0)
+        return self.verify_segment(
+            start_sequence=checkpoint_sequence + 1,
+            previous_sha256=checkpoint_hash,
+        )
 
     def verify_segment(
         self, *, start_sequence: int, previous_sha256: str

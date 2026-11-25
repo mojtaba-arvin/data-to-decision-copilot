@@ -146,3 +146,25 @@ Existing genesis-only store verifiers do not satisfy this contract. Until both
 journal stores implement that callback and checkpoint-aware append semantics,
 this module is an archive-envelope verifier only: it does not authorize rotation,
 checkpoint advancement, restore publication, or retention deletion.
+
+
+## Checkpoint metadata implementation boundary
+
+The Evidence and DecisionTrace stores now support additive checkpoint metadata
+(`checkpoint_schema_version`, `checkpoint_sequence`, and
+`checkpoint_sha256`) without changing the existing record-hash schema or
+rewriting legacy rows. `initialize_checkpoint_metadata()` verifies the current
+genesis-anchored journal before installing the initial zero/genesis checkpoint.
+It does not advance a checkpoint or remove records.
+
+A non-genesis checkpoint is not self-authenticating merely because it is stored
+inside the SQLite database. Active-store `verify()`, `append()`, and backup
+verification therefore require the caller to supply the exact
+`trusted_checkpoint=(sequence, sha256)` obtained from independent archive-chain
+verification. Missing or mismatched trust fails closed. A future rotation
+coordinator must only provide that value after verifying the complete archive
+chain and must atomically publish the checkpoint with the corresponding active
+journal transition.
+
+This increment enables checkpoint-aware append mechanics; it does not authorize
+rotation, checkpoint advancement, archive restore publication, or retention.

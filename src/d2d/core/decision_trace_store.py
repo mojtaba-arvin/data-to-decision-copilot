@@ -28,6 +28,31 @@ def _canonical(value: Any) -> bytes:
     ).encode("utf-8")
 
 
+def _read_checkpoint(connection: sqlite3.Connection) -> tuple[int, str]:
+    rows = connection.execute(
+        "SELECT key, value FROM trace_store_meta WHERE key IN "
+        "('checkpoint_schema_version', 'checkpoint_sequence', 'checkpoint_sha256')"
+    ).fetchall()
+    metadata = {str(row["key"]): str(row["value"]) for row in rows}
+    expected = {"checkpoint_schema_version", "checkpoint_sequence", "checkpoint_sha256"}
+    if not metadata:
+        return 0, GENESIS
+    if set(metadata) != expected or metadata["checkpoint_schema_version"] != "1":
+        raise RuntimeError("invalid or unsupported decision trace checkpoint metadata")
+    try:
+        sequence = int(metadata["checkpoint_sequence"])
+        digest = metadata["checkpoint_sha256"]
+        if sequence < 0 or len(digest) != 64:
+            raise ValueError
+        if any(character not in "0123456789abcdef" for character in digest):
+            raise ValueError
+    except ValueError as exc:
+        raise RuntimeError("invalid decision trace checkpoint") from exc
+    if sequence == 0 and digest != GENESIS:
+        raise RuntimeError("genesis checkpoint hash mismatch")
+    return sequence, digest
+
+
 def _trace_payload(trace: DecisionTrace) -> dict[str, Any]:
     return trace.model_dump(mode="json", exclude={"trace_sha256"})
 
@@ -54,8 +79,14 @@ class SQLiteDecisionTraceStore:
     independent anchoring/signing is outside this adapter's trust boundary.
     """
 
-    def __init__(self, path: str | Path) -> None:
+    def __init__(
+        self,
+        path: str | Path,
+        *,
+        trusted_checkpoint: tuple[int, str] | None = None,
+    ) -> None:
         self.path = str(path)
+        self.trusted_checkpoint = trusted_checkpoint
         if self.path != ":memory:":
             Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         with closing(self._connect()) as connection:
@@ -99,6 +130,41 @@ class SQLiteDecisionTraceStore:
         connection.execute("PRAGMA busy_timeout = 10000")
         return connection
 
+    def initialize_checkpoint_metadata(self) -> tuple[int, str]:
+        """Install additive checkpoint metadata without changing trace records.
+
+        Existing databases remain genesis-anchored until a future verified rotation
+        atomically advances this checkpoint. This method never deletes or rewrites rows.
+        """
+        with closing(self._connect()) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                report = self.verify()
+                if not report.valid:
+                    raise ValueError(
+                        "cannot initialize checkpoint metadata on an invalid journal: "
+                        f"{report.error}"
+                    )
+                sequence, digest = _read_checkpoint(connection)
+                connection.execute(
+                    "INSERT OR IGNORE INTO trace_store_meta(key, value) VALUES (?, ?)",
+                    ("checkpoint_schema_version", "1"),
+                )
+                connection.execute(
+                    "INSERT OR IGNORE INTO trace_store_meta(key, value) VALUES (?, ?)",
+                    ("checkpoint_sequence", str(sequence)),
+                )
+                connection.execute(
+                    "INSERT OR IGNORE INTO trace_store_meta(key, value) VALUES (?, ?)",
+                    ("checkpoint_sha256", digest),
+                )
+                _read_checkpoint(connection)
+                connection.commit()
+                return sequence, digest
+            except Exception:
+                connection.rollback()
+                raise
+
     def append(self, trace: DecisionTrace) -> int:
         """Append a self-consistent trace atomically and return its sequence."""
         if _trace_digest(trace) != trace.trace_sha256:
@@ -107,12 +173,38 @@ class SQLiteDecisionTraceStore:
         record_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()
         with closing(self._connect()) as connection:
             connection.execute("BEGIN IMMEDIATE")
+            checkpoint_sequence, checkpoint_hash = _read_checkpoint(connection)
+            if checkpoint_sequence > 0 and self.trusted_checkpoint != (
+                checkpoint_sequence, checkpoint_hash
+            ):
+                raise RuntimeError(
+                    "non-genesis decision trace checkpoint requires a trusted archive checkpoint"
+                )
+            if self.trusted_checkpoint is not None and self.trusted_checkpoint != (
+                checkpoint_sequence, checkpoint_hash
+            ):
+                raise RuntimeError(
+                    "trusted decision trace checkpoint does not match journal metadata"
+                )
+            first = connection.execute(
+                "SELECT sequence, previous_sha256 FROM decision_trace_journal "
+                "ORDER BY sequence ASC LIMIT 1"
+            ).fetchone()
+            if first is not None and (
+                int(first["sequence"]) != checkpoint_sequence + 1
+                or str(first["previous_sha256"]) != checkpoint_hash
+            ):
+                raise RuntimeError(
+                    "decision trace checkpoint does not match first stored record"
+                )
             last = connection.execute(
                 "SELECT sequence, entry_sha256 FROM decision_trace_journal "
                 "ORDER BY sequence DESC LIMIT 1"
             ).fetchone()
-            sequence = 1 if last is None else int(last["sequence"]) + 1
-            previous = GENESIS if last is None else str(last["entry_sha256"])
+            sequence = (
+                checkpoint_sequence + 1 if last is None else int(last["sequence"]) + 1
+            )
+            previous = checkpoint_hash if last is None else str(last["entry_sha256"])
             entry_hash = hashlib.sha256(
                 _canonical(
                     {
@@ -174,7 +266,9 @@ class SQLiteDecisionTraceStore:
             raise ValueError(f"cannot back up an invalid decision trace journal: {report.error}")
         return create_verified_backup(
             self.path, destination,
-            verify=lambda path: SQLiteDecisionTraceStore(path).verify(),
+            verify=lambda path: SQLiteDecisionTraceStore(
+                path, trusted_checkpoint=self.trusted_checkpoint
+            ).verify(),
             table_name="decision_trace_journal",
         )
 
@@ -184,10 +278,30 @@ class SQLiteDecisionTraceStore:
         evidence_store: EvidenceStore | None = None,
         expected_schema_fingerprints: dict[str, str] | None = None,
     ) -> TraceStoreVerificationReport:
-        """Verify the complete genesis-anchored decision-trace journal."""
+        """Verify the active decision-trace journal from its predecessor checkpoint."""
+        with closing(self._connect()) as connection:
+            checkpoint_sequence, checkpoint_hash = _read_checkpoint(connection)
+            if checkpoint_sequence > 0 and self.trusted_checkpoint != (
+                checkpoint_sequence, checkpoint_hash
+            ):
+                return TraceStoreVerificationReport(
+                    False, 0, 0,
+                    "non-genesis checkpoint requires a trusted archive checkpoint",
+                )
+            if self.trusted_checkpoint is not None and self.trusted_checkpoint != (
+                checkpoint_sequence, checkpoint_hash
+            ):
+                return TraceStoreVerificationReport(
+                    False, 0, 0, "trusted checkpoint does not match journal metadata"
+                )
+            count = int(
+                connection.execute("SELECT COUNT(*) FROM decision_trace_journal").fetchone()[0]
+            )
+        if count == 0 and checkpoint_sequence > 0:
+            return TraceStoreVerificationReport(True, 0, 0)
         return self.verify_segment(
-            start_sequence=1,
-            previous_sha256=GENESIS,
+            start_sequence=checkpoint_sequence + 1,
+            previous_sha256=checkpoint_hash,
             evidence_store=evidence_store,
             expected_schema_fingerprints=expected_schema_fingerprints,
         )
