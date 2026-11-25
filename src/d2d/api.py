@@ -3,18 +3,22 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
+import logging
 import json
 import secrets
 import socket
+import time
 import ssl
+from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from threading import BoundedSemaphore
+from threading import BoundedSemaphore, Condition
 from typing import Any, cast
 from urllib.parse import unquote
 
 from d2d.application import CopilotService
 
 _MAX_BODY_BYTES = 8_192
+_logger = logging.getLogger(__name__)
 
 
 def create_server(
@@ -48,8 +52,37 @@ def create_server(
         raise ValueError("TLS certificate and key must be configured together")
 
     query_slots = BoundedSemaphore(max_concurrent_queries)
+    active_condition = Condition()
+    active_handlers = 0
 
     class Handler(BaseHTTPRequestHandler):
+        def setup(self) -> None:
+            nonlocal active_handlers
+            super().setup()
+            with active_condition:
+                active_handlers += 1
+
+        def finish(self) -> None:
+            nonlocal active_handlers
+            try:
+                super().finish()
+            finally:
+                with active_condition:
+                    active_handlers -= 1
+                    active_condition.notify_all()
+
+        def _begin_request(self) -> None:
+            self._request_started_at = time.monotonic()
+            if self.path.startswith("/v1/traces/"):
+                self._route_label = "/v1/traces/{trace_id}"
+            elif self.path in {
+                "/health", "/ready", "/v1/schema", "/v1/history",
+                "/v1/traces", "/v1/query", "/v1/decision",
+            }:
+                self._route_label = self.path
+            else:
+                self._route_label = "/unknown"
+
         def _send(self, status: int, payload: dict[str, object]) -> None:
             body = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
             self.send_response(status)
@@ -60,6 +93,18 @@ def create_server(
                 self.send_header("WWW-Authenticate", 'Bearer realm="d2d"')
             self.end_headers()
             self.wfile.write(body)
+            _logger.info(json.dumps({
+                "timestamp": datetime.now(UTC).isoformat(),
+                "event": "http_request",
+                "method": getattr(self, "command", "UNKNOWN"),
+                "route": getattr(self, "_route_label", "/unknown"),
+                "status": status,
+                "duration_ms": round(
+                    (time.monotonic() - getattr(self, "_request_started_at", time.monotonic()))
+                    * 1000,
+                    2,
+                ),
+            }, separators=(",", ":")))
 
         def _authorized(self) -> bool:
             if bearer_token is None:
@@ -72,6 +117,7 @@ def create_server(
             return False
 
         def do_GET(self) -> None:
+            self._begin_request()
             if not self._authorized():
                 return
             if self.path == "/health":
@@ -107,6 +153,7 @@ def create_server(
                 self._send(404, {"error": "not_found"})
 
         def do_POST(self) -> None:
+            self._begin_request()
             if not self._authorized():
                 return
             if self.path not in ("/v1/query", "/v1/decision"):
@@ -178,6 +225,22 @@ def create_server(
     handler: type[BaseHTTPRequestHandler] = Handler
 
     class BoundedRequestThreadingHTTPServer(ThreadingHTTPServer):
+        daemon_threads = True
+        block_on_close = False
+
+        def wait_for_idle(self, timeout_seconds: float) -> bool:
+            """Wait at most timeout_seconds for active request handlers to finish."""
+            if timeout_seconds < 0:
+                raise ValueError("shutdown drain timeout must not be negative")
+            deadline = time.monotonic() + timeout_seconds
+            with active_condition:
+                while active_handlers:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        return False
+                    active_condition.wait(remaining)
+            return True
+
         def get_request(self) -> tuple[socket.socket, Any]:
             connection, address = super().get_request()
             # This bounds idle socket reads/writes, not total query execution time.
