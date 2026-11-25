@@ -384,7 +384,18 @@ def restore_archive_chain(
                 f"(SELECT entry_sha256 FROM {table_name} ORDER BY sequence DESC LIMIT 1) "
                 f"FROM {table_name}"
             ).fetchone()
-            if (
+            if chain_report.records_checked == 0:
+                if (
+                    int(count) != 0
+                    or first is not None
+                    or last is not None
+                    or head is not None
+                    or chain_report.head_sha256 != GENESIS
+                ):
+                    raise ValueError(
+                        "reconstructed empty journal bounds do not match archive chain"
+                    )
+            elif (
                 int(count) != chain_report.records_checked
                 or first != 1
                 or last != chain_report.last_sequence
