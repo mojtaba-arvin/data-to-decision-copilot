@@ -156,3 +156,14 @@ a hard termination deadline: if requests remain active, shutdown logs a warning
 and continues waiting rather than closing databases underneath live handlers.
 A truly bounded shutdown remains open until query/model execution can be
 cancelled and every supervised child worker is proven to terminate on deadline.
+
+
+### Paired journal backup and restore
+
+The operator workflow is available through `d2d journal backup` and
+`d2d journal restore`. See
+[`docs/operations/paired-journal-restore.md`](operations/paired-journal-restore.md).
+This is a journal-only backup: catalog/source data, query history, config,
+secrets, and model artifacts remain separate. The commands do not rotate or
+prune active journals. The REST shutdown drain threshold remains a warning,
+not a hard deadline; the bounded shutdown acceptance item is still open.
