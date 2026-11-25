@@ -21,6 +21,45 @@ _MAX_BODY_BYTES = 8_192
 _logger = logging.getLogger(__name__)
 
 
+class _DrainableThreadingHTTPServer(ThreadingHTTPServer):
+    daemon_threads = True
+    block_on_close = False
+
+    def __init__(self, server_address: tuple[str, int], handler: type[BaseHTTPRequestHandler],
+                 *, socket_timeout: float) -> None:
+        self._socket_timeout = socket_timeout
+        self._active_condition = Condition()
+        self._active_handlers = 0
+        super().__init__(server_address, handler)
+
+    def handler_started(self) -> None:
+        with self._active_condition:
+            self._active_handlers += 1
+
+    def handler_finished(self) -> None:
+        with self._active_condition:
+            self._active_handlers -= 1
+            self._active_condition.notify_all()
+
+    def wait_for_idle(self, timeout_seconds: float) -> bool:
+        """Wait at most timeout_seconds for active request handlers to finish."""
+        if timeout_seconds < 0:
+            raise ValueError("shutdown drain timeout must not be negative")
+        deadline = time.monotonic() + timeout_seconds
+        with self._active_condition:
+            while self._active_handlers:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return False
+                self._active_condition.wait(remaining)
+        return True
+
+    def get_request(self) -> tuple[socket.socket, Any]:
+        connection, address = super().get_request()
+        connection.settimeout(self._socket_timeout)
+        return connection, address
+
+
 def create_server(
     service: CopilotService, *, host: str = "127.0.0.1", port: int = 8765,
     max_concurrent_queries: int = 4,
@@ -28,7 +67,7 @@ def create_server(
     bearer_token: str | None = None,
     tls_certfile: str | None = None,
     tls_keyfile: str | None = None,
-) -> ThreadingHTTPServer:
+) -> _DrainableThreadingHTTPServer:
     """Create a loopback or TLS-protected remote server.
 
     request_socket_timeout_seconds bounds idle socket I/O while reading or
@@ -52,24 +91,16 @@ def create_server(
         raise ValueError("TLS certificate and key must be configured together")
 
     query_slots = BoundedSemaphore(max_concurrent_queries)
-    active_condition = Condition()
-    active_handlers = 0
-
     class Handler(BaseHTTPRequestHandler):
         def setup(self) -> None:
-            nonlocal active_handlers
             super().setup()
-            with active_condition:
-                active_handlers += 1
+            cast(_DrainableThreadingHTTPServer, self.server).handler_started()
 
         def finish(self) -> None:
-            nonlocal active_handlers
             try:
                 super().finish()
             finally:
-                with active_condition:
-                    active_handlers -= 1
-                    active_condition.notify_all()
+                cast(_DrainableThreadingHTTPServer, self.server).handler_finished()
 
         def _begin_request(self) -> None:
             self._request_started_at = time.monotonic()
@@ -247,7 +278,9 @@ def create_server(
             connection.settimeout(request_socket_timeout_seconds)
             return connection, address
 
-    server = BoundedRequestThreadingHTTPServer((host, port), handler)
+    server = _DrainableThreadingHTTPServer(
+        (host, port), handler, socket_timeout=request_socket_timeout_seconds
+    )
     if tls_certfile is not None and tls_keyfile is not None:
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         context.minimum_version = ssl.TLSVersion.TLSv1_2
