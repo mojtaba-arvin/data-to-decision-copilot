@@ -539,3 +539,14 @@ def test_invalid_remote_serve_config_fails_before_database_creation(
 def test_server_config_rejects_invalid_port_before_bind(port: int) -> None:
     with pytest.raises(ValueError, match="port"):
         validate_server_config(host="127.0.0.1", port=port)
+
+
+
+def test_server_config_rejects_unreadable_tls_files_before_startup(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="TLS certificate/key could not be loaded"):
+        validate_server_config(
+            host="0.0.0.0",
+            bearer_token="x" * 32,
+            tls_certfile=str(tmp_path / "missing-cert.pem"),
+            tls_keyfile=str(tmp_path / "missing-key.pem"),
+        )
