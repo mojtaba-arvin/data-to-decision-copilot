@@ -389,6 +389,7 @@ def test_rest_server_tracks_active_requests_before_close(
         method="POST",
     )
     request_errors: list[Exception] = []
+    close_started = threading.Event()
 
     def send_request() -> None:
         try:
@@ -405,9 +406,22 @@ def test_rest_server_tracks_active_requests_before_close(
         serve_thread.join(timeout=5)
         assert not serve_thread.is_alive()
         assert not server.wait_for_idle(0.01)
+
+        def close_server() -> None:
+            close_started.set()
+            server.server_close()
+
+        close_thread = threading.Thread(target=close_server)
+        close_thread.start()
+        assert close_started.wait(5)
+        close_thread.join(timeout=0.05)
+        assert close_thread.is_alive()
+
         release.set()
         request_thread.join(timeout=5)
+        close_thread.join(timeout=5)
         assert not request_thread.is_alive()
+        assert not close_thread.is_alive()
         assert request_errors == []
         assert server.wait_for_idle(5)
     finally:
