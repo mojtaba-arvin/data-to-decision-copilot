@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 import time
 from dataclasses import dataclass
 from enum import StrEnum
@@ -17,7 +16,6 @@ from d2d.core.evidence_store import SQLiteEvidenceStore
 from d2d.core.sql_executor import QueryResult
 from d2d.core.sql_guard import validate_read_only_sql
 
-_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _MAX_LIMIT = 1_000
 _MAX_FILTER_VALUES = 100
 QueryScalar = str | int | float | bool
@@ -137,7 +135,8 @@ def _is_scalar(value: object) -> bool:
 
 
 def _quote_identifier(value: str) -> str:
-    if not _IDENTIFIER.fullmatch(value):
+    """Quote a schema-derived SQL identifier without treating it as SQL syntax."""
+    if not value or "\x00" in value or any(ord(character) < 32 or ord(character) == 127 for character in value):
         raise QueryPlanningError(f"unsupported identifier: {value!r}")
     return '"' + value.replace('"', '""') + '"'
 

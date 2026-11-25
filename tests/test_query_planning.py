@@ -256,3 +256,37 @@ def test_runtime_rejects_schema_change_during_planning(
             asyncio.run(runtime.run("test schema drift", MutatingPlanner()))
     finally:
         source.close()
+
+
+
+def test_runtime_supports_catalog_paths_with_hyphenated_file_stems(tmp_path: Path) -> None:
+    catalog = tmp_path / "offline-demo.duckdb"
+    connection = duckdb.connect(str(catalog))
+    connection.execute("CREATE TABLE sales (amount INTEGER)")
+    connection.execute("INSERT INTO sales VALUES (10), (20), (30)")
+    connection.close()
+
+    source = DuckDBConnector(catalog)
+    source.open()
+    try:
+        snapshot = source.snapshot()
+        plan = QueryPlan(
+            schema_name="main",
+            table_name="sales",
+            schema_fingerprint=snapshot.fingerprint,
+            aggregates=(AggregateSpec(function=AggregateFunction.COUNT, alias="row_count"),),
+            limit=1,
+        )
+        runtime = QueryPlanningRuntime(
+            source_id="offline-demo",
+            data_source=source,
+            executor=DuckDBQueryExecutor(catalog),
+            evidence_store=SQLiteEvidenceStore(tmp_path / "offline-demo-evidence.sqlite"),
+        )
+        result = asyncio.run(
+            runtime.run("count rows in sales", DeterministicQueryPlanner(plan))
+        )
+        assert result.result.columns == ("row_count",)
+        assert result.result.rows == ((3,),)
+    finally:
+        source.close()
