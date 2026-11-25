@@ -64,3 +64,13 @@ provided chain, but the current format is unsigned. They do not authenticate
 who produced an archive or protect against an attacker who can replace every
 segment and manifest consistently. Detached signatures and external key
 management remain separate acceptance criteria in Issue #37.
+
+
+## Operator notes
+
+This paired backup is a full genesis-to-head snapshot of the two journals at
+their respective SQLite backup snapshots. The command verifies cross-journal
+references before publishing; if writes occur between the two snapshots and a
+DecisionTrace references Evidence absent from the Evidence snapshot, backup
+fails rather than publishing an inconsistent pair. No active journal is
+truncated or rotated.
