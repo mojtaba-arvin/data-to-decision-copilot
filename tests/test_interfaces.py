@@ -361,7 +361,7 @@ def test_rest_request_logs_are_structured_and_exclude_question_payload(
         service.close()
 
 
-def test_rest_server_waits_for_active_requests_with_a_bounded_drain(
+def test_rest_server_tracks_active_requests_before_close(
     catalog: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     service = build_service(
