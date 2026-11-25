@@ -79,8 +79,14 @@ class VerificationReport:
 class SQLiteEvidenceStore:
     """Durable local journal; UPDATE and DELETE are blocked by SQLite triggers."""
 
-    def __init__(self, path: str | Path) -> None:
+    def __init__(
+        self,
+        path: str | Path,
+        *,
+        trusted_checkpoint: tuple[int, str] | None = None,
+    ) -> None:
         self.path = str(path)
+        self.trusted_checkpoint = trusted_checkpoint
         if self.path != ":memory:":
             Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         with closing(self._connect()) as connection:
@@ -166,6 +172,16 @@ class SQLiteEvidenceStore:
         with closing(self._connect()) as connection:
             connection.execute("BEGIN IMMEDIATE")
             checkpoint_sequence, checkpoint_hash = _read_checkpoint(connection)
+            if checkpoint_sequence > 0 and self.trusted_checkpoint != (
+                checkpoint_sequence, checkpoint_hash
+            ):
+                raise RuntimeError(
+                    "non-genesis evidence checkpoint requires a trusted archive checkpoint"
+                )
+            if self.trusted_checkpoint is not None and self.trusted_checkpoint != (
+                checkpoint_sequence, checkpoint_hash
+            ):
+                raise RuntimeError("trusted evidence checkpoint does not match journal metadata")
             first = connection.execute(
                 "SELECT sequence, previous_sha256 FROM evidence_journal "
                 "ORDER BY sequence ASC LIMIT 1"
@@ -241,6 +257,18 @@ class SQLiteEvidenceStore:
         """Verify the active journal from its persisted predecessor checkpoint."""
         with closing(self._connect()) as connection:
             checkpoint_sequence, checkpoint_hash = _read_checkpoint(connection)
+            if checkpoint_sequence > 0 and self.trusted_checkpoint != (
+                checkpoint_sequence, checkpoint_hash
+            ):
+                return VerificationReport(
+                    False, 0, "non-genesis checkpoint requires a trusted archive checkpoint"
+                )
+            if self.trusted_checkpoint is not None and self.trusted_checkpoint != (
+                checkpoint_sequence, checkpoint_hash
+            ):
+                return VerificationReport(
+                    False, 0, "trusted checkpoint does not match journal metadata"
+                )
             count = int(
                 connection.execute("SELECT COUNT(*) FROM evidence_journal").fetchone()[0]
             )
