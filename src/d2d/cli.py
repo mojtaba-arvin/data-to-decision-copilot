@@ -82,13 +82,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             run_stdio(service)
             return 0
         if args.command == "serve":
+            if not 0.0 <= args.shutdown_drain_timeout_seconds <= 300.0:
+                raise ValueError("shutdown drain timeout must be between 0 and 300 seconds")
             server = create_server(
                 service, host=args.host, port=args.port,
                 bearer_token=os.environ.get(args.bearer_token_env),
                 tls_certfile=args.tls_certfile, tls_keyfile=args.tls_keyfile,
             )
-            if not 0.0 <= args.shutdown_drain_timeout_seconds <= 300.0:
-                raise ValueError("shutdown drain timeout must be between 0 and 300 seconds")
             logging.basicConfig(level=logging.INFO, format="%(message)s")
             serve_thread = Thread(
                 target=server.serve_forever, name="d2d-rest-acceptor", daemon=True
