@@ -34,8 +34,8 @@ Retention is an archive lifecycle policy. The default is no deletion. A complete
 
 Segment-aware archive verification, checkpoint-aware journal segments, durable
 manifest publication, and generic full-chain restore have been merged. Full-chain
-restore is verified with real EvidenceStore segments; DecisionTrace restore and
-paired historical replay are the next test gate. This does not authorize live
+restore is verified for both Evidence and DecisionTrace; paired historical
+replay against the restored EvidenceStore passed (PRs #61 and #63). This does not authorize live
 journal rotation or retention. Rotation remains disabled until crash injection
 covers every durable transition, concurrent append/WAL behavior is proven, and
 recovery is idempotent. Retention remains disabled until redundant archive-copy
@@ -48,3 +48,15 @@ closed on overwrite or unsupported no-replace directory publication. They do
 not rotate active journals or advance checkpoints. The backup covers only the
 two journals, not catalogs, query history, configuration, secrets, or model
 artifacts. The archive manifests remain unsigned.
+
+
+## Paired-snapshot consistency test boundary
+
+The paired backup takes independent SQLite online snapshots, then verifies every
+DecisionTrace evidence reference against the Evidence snapshot before publishing
+the pair. A regression test deliberately appends a new Evidence record and
+DecisionTrace after the Evidence snapshot but before the trace snapshot; the
+backup must fail closed and leave the destination unpublished. This validates
+cross-snapshot referential consistency, not a globally atomic point-in-time
+snapshot across two independent SQLite databases. Operators must quiesce writes
+when they require a single business-time cut across both journals.

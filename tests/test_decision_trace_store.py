@@ -710,3 +710,48 @@ def test_journal_backup_and_restore_support_empty_trace_genesis(
     assert restored_evidence.verify().valid
     assert restored_traces.verify(evidence_store=restored_evidence).valid
     assert restored_traces.count() == 0
+
+
+
+def test_paired_backup_rejects_cross_snapshot_evidence_reference_skew(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    evidence_path = tmp_path / "live-evidence.sqlite"
+    trace_path = tmp_path / "live-traces.sqlite"
+    evidence_store = SQLiteEvidenceStore(evidence_path)
+    SQLiteDecisionTraceStore(trace_path)
+    destination = tmp_path / "must-not-publish"
+
+    original_backup = SQLiteDecisionTraceStore.backup
+
+    def append_trace_after_evidence_snapshot(
+        store: SQLiteDecisionTraceStore,
+        snapshot_path: str | Path,
+    ):
+        # The paired backup has already captured Evidence at this point.
+        # Adding both a new Evidence row and its Trace makes the Trace snapshot
+        # refer to data absent from the earlier Evidence snapshot.
+        live_evidence = SQLiteEvidenceStore(evidence_path)
+        trace = make_trace(live_evidence, 909)
+        store.append(trace)
+        return original_backup(store, snapshot_path)
+
+    monkeypatch.setattr(
+        SQLiteDecisionTraceStore,
+        "backup",
+        append_trace_after_evidence_snapshot,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="paired journal backup failed trace/evidence verification",
+    ):
+        journal_restore.backup_paired_journals(
+            evidence_path, trace_path, destination
+        )
+
+    assert not destination.exists()
+    assert evidence_store.verify().valid
+    assert SQLiteDecisionTraceStore(trace_path).verify().valid
+    assert SQLiteEvidenceStore(evidence_path).count() == 1
