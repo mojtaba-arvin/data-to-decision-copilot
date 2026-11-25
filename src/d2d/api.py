@@ -25,7 +25,7 @@ def create_server(
     tls_certfile: str | None = None,
     tls_keyfile: str | None = None,
 ) -> ThreadingHTTPServer:
-    """Create a loopback server or a TLS-protected bearer-authenticated remote server."""
+    """Create a loopback or TLS-protected remote server.\n\n    ``request_socket_timeout_seconds`` bounds idle socket I/O while reading or\n    writing an HTTP request/response; it is not a total query execution deadline.\n    """
     if not 1 <= max_concurrent_queries <= 32:
         raise ValueError("max_concurrent_queries must be between 1 and 32")
     if not 1.0 <= request_socket_timeout_seconds <= 120.0:
