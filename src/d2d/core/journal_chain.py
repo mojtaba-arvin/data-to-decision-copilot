@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sqlite3
+import tempfile
 from collections.abc import Callable, Sequence
 from contextlib import closing
 from dataclasses import dataclass
@@ -31,6 +33,18 @@ class SegmentVerification(Protocol):
 
     @property
     def records_checked(self) -> int: ...
+
+
+@dataclass(frozen=True, slots=True)
+class ArchiveChainRestoreReport:
+    """Result of reconstructing a full journal from verified archive segments."""
+
+    destination: str
+    segments_checked: int
+    records_restored: int
+    last_sequence: int
+    head_sha256: str
+    manifest_sha256: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -186,6 +200,13 @@ def verify_archive_chain(
                 raise ValueError(f"segment {index}: database sequence bounds mismatch")
             if bounds[2] != first_entry or bounds[3] != last_entry:
                 raise ValueError(f"segment {index}: database boundary hash mismatch")
+            _verify_segment_checkpoint(
+                database,
+                journal_kind=journal_kind,
+                schema_version=schema_version,
+                first_sequence=first,
+                previous_sha256=first_previous,
+            )
 
             total_records += records
             expected_sequence = last + 1
