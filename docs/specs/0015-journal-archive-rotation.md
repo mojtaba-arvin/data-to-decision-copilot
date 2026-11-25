@@ -196,3 +196,20 @@ the logical cross-journal references survive paired recovery in the test
 harness. It does not yet provide a single operator command or atomic
 directory-level publication of the pair; those remain part of the operational
 restore workflow and must be implemented before the release drill is complete.
+
+
+## Operator paired backup/restore increment
+
+The operator workflow is being added as separate commands:
+`d2d journal backup --evidence-db PATH --trace-db PATH --output DIR` and
+`d2d journal restore --evidence-archive DIR --trace-archive DIR --output DIR`.
+Backup uses SQLite online snapshots and publishes both genesis-to-head archive
+segments together. Restore verifies both chains, verifies all trace references
+against the restored Evidence journal, and publishes the pair directory with an
+atomic no-replace rename. Empty genesis journals are supported.
+
+This increment is deliberately not rotation: it refuses non-genesis active
+checkpoints, never truncates active journals, and does not advance checkpoint
+metadata. Catalogs, query history, config, secrets, and model artifacts are
+outside this paired-journal backup and need their own procedures. The manifests
+remain unsigned, so integrity does not imply producer authenticity.
