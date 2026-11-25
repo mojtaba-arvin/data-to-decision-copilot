@@ -3,21 +3,27 @@
 from __future__ import annotations
 
 import ctypes
+import hashlib
 import errno
 import json
 import os
+import sqlite3
 import sys
 import tempfile
+from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
+from uuid import uuid4
 
 from d2d.core.decision_trace_store import SCHEMA_VERSION as TRACE_SCHEMA_VERSION
 from d2d.core.decision_trace_store import SQLiteDecisionTraceStore
 from d2d.core.evidence_store import SCHEMA_VERSION as EVIDENCE_SCHEMA_VERSION
 from d2d.core.evidence_store import SQLiteEvidenceStore
 from d2d.core.journal_chain import (
+    GENESIS,
     ArchiveChainRestoreReport,
     restore_archive_chain,
+    verify_archive_chain,
 )
 
 
@@ -239,5 +245,199 @@ def restore_paired_journals(
         trace_segments_checked=trace_report.segments_checked,
         trace_records_restored=trace_report.records_restored,
         trace_head_sha256=trace_report.head_sha256,
+        traces_evidence_checked=trace_verification.evidence_checked,
+    )
+
+
+
+@dataclass(frozen=True, slots=True)
+class PairedJournalBackupReport:
+    """Result of creating a verified, immutable pair of full-journal snapshots."""
+
+    destination: str
+    evidence_records: int
+    evidence_head_sha256: str
+    trace_records: int
+    trace_head_sha256: str
+    traces_evidence_checked: int
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _write_genesis_segment_manifest(
+    database: Path,
+    manifest: Path,
+    *,
+    journal_kind: str,
+    schema_version: int,
+) -> None:
+    table = "evidence_journal" if journal_kind == "evidence" else "decision_trace_journal"
+    with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True)) as connection:
+        rows = connection.execute(
+            f"SELECT sequence, entry_sha256 FROM {table} ORDER BY sequence"
+        ).fetchall()
+    records = len(rows)
+    if records:
+        first_sequence = int(rows[0][0])
+        last_sequence = int(rows[-1][0])
+        if first_sequence != 1 or last_sequence != records:
+            raise ValueError("full-journal backup must preserve genesis-to-head sequence")
+        first_entry = str(rows[0][1])
+        last_entry = str(rows[-1][1])
+    else:
+        first_sequence, last_sequence = 1, 0
+        first_entry = last_entry = GENESIS
+
+    payload = {
+        "format_version": 2,
+        "journal_kind": journal_kind,
+        "database_file": database.name,
+        "schema_version": schema_version,
+        "segment_id": f"{journal_kind}-{uuid4().hex}",
+        "first_sequence": first_sequence,
+        "last_sequence": last_sequence,
+        "records": records,
+        "first_previous_sha256": GENESIS,
+        "first_entry_sha256": first_entry,
+        "last_entry_sha256": last_entry,
+        "previous_manifest_sha256": GENESIS,
+        "database_bytes": database.stat().st_size,
+        "database_sha256": _sha256_file(database),
+    }
+    canonical = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    document = {
+        **payload,
+        "manifest_sha256": hashlib.sha256(canonical).hexdigest(),
+    }
+    manifest.write_bytes(
+        json.dumps(
+            document,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+        + b"\\n"
+    )
+    _fsync_file(manifest)
+
+
+def backup_paired_journals(
+    evidence_database: str | Path,
+    trace_database: str | Path,
+    destination: str | Path,
+) -> PairedJournalBackupReport:
+    """Create and atomically publish a verified pair of genesis-to-head snapshots.
+
+    This operation never rotates or truncates the active journals. Non-genesis
+    active checkpoints are rejected until crash-safe rotation is implemented.
+    """
+    source_paths: list[Path] = []
+    for supplied in (evidence_database, trace_database):
+        path = Path(supplied)
+        if path.is_symlink() or not path.is_file():
+            raise ValueError(f"journal database must be an existing regular file: {path}")
+        source_paths.append(path.resolve(strict=True))
+
+    supplied_target = Path(destination)
+    if supplied_target.is_symlink():
+        raise FileExistsError(f"backup destination already exists: {supplied_target}")
+    target = supplied_target.resolve(strict=False)
+    if target.name in {"", ".", ".."}:
+        raise ValueError("backup destination must name a new directory")
+    if target.exists():
+        raise FileExistsError(f"backup destination already exists: {target}")
+    for source in source_paths:
+        if target == source or source in target.parents:
+            raise ValueError("backup destination must not contain a source journal database")
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(
+        prefix=f".{target.name}.backup-", dir=target.parent
+    ) as temporary_directory:
+        staged_directory = Path(temporary_directory) / "backup"
+        evidence_directory = staged_directory / "evidence"
+        trace_directory = staged_directory / "traces"
+        evidence_directory.mkdir(parents=True)
+        trace_directory.mkdir(parents=True)
+
+        evidence_snapshot = evidence_directory / "segment-000001.sqlite"
+        trace_snapshot = trace_directory / "segment-000001.sqlite"
+        SQLiteEvidenceStore(source_paths[0]).backup(evidence_snapshot)
+        SQLiteDecisionTraceStore(source_paths[1]).backup(trace_snapshot)
+
+        evidence_manifest = evidence_directory / "segment-000001.manifest.json"
+        trace_manifest = trace_directory / "segment-000001.manifest.json"
+        _write_genesis_segment_manifest(
+            evidence_snapshot,
+            evidence_manifest,
+            journal_kind="evidence",
+            schema_version=EVIDENCE_SCHEMA_VERSION,
+        )
+        _write_genesis_segment_manifest(
+            trace_snapshot,
+            trace_manifest,
+            journal_kind="decision_trace",
+            schema_version=TRACE_SCHEMA_VERSION,
+        )
+
+        evidence_chain = verify_archive_chain(
+            [(evidence_snapshot, evidence_manifest)],
+            journal_kind="evidence",
+            schema_version=EVIDENCE_SCHEMA_VERSION,
+            verify_segment=_verify_evidence_segment,
+        )
+        trace_chain = verify_archive_chain(
+            [(trace_snapshot, trace_manifest)],
+            journal_kind="decision_trace",
+            schema_version=TRACE_SCHEMA_VERSION,
+            verify_segment=_verify_trace_segment,
+        )
+        if not evidence_chain.valid or not trace_chain.valid:
+            raise ValueError(
+                "paired journal backup failed independent archive verification: "
+                f"evidence={evidence_chain.error}; trace={trace_chain.error}"
+            )
+
+        evidence_store = SQLiteEvidenceStore(evidence_snapshot)
+        trace_store = SQLiteDecisionTraceStore(trace_snapshot)
+        trace_verification = trace_store.verify(evidence_store=evidence_store)
+        if not trace_verification.valid:
+            raise ValueError(
+                "paired journal backup failed trace/evidence verification: "
+                f"{trace_verification.error}"
+            )
+
+        for artifact in (
+            evidence_snapshot,
+            evidence_manifest,
+            trace_snapshot,
+            trace_manifest,
+        ):
+            _fsync_file(artifact)
+        _fsync_directory(evidence_directory)
+        _fsync_directory(trace_directory)
+        _fsync_directory(staged_directory)
+        _rename_directory_no_replace(staged_directory, target)
+        _fsync_directory(target.parent)
+
+    return PairedJournalBackupReport(
+        destination=str(target),
+        evidence_records=evidence_chain.records_checked,
+        evidence_head_sha256=evidence_chain.head_sha256,
+        trace_records=trace_chain.records_checked,
+        trace_head_sha256=trace_chain.head_sha256,
         traces_evidence_checked=trace_verification.evidence_checked,
     )
