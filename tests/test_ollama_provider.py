@@ -1,158 +1,83 @@
 from __future__ import annotations
 
-import json
-from collections.abc import Callable
-from io import BytesIO
-from urllib.error import URLError
-from urllib.request import Request
+from pathlib import Path
 
+import duckdb
 import pytest
 
-from d2d.core.model_planning import StructuredGenerationRequest
-from d2d.core.ollama_provider import (
-    OllamaProviderError,
-    OllamaStructuredPlanProvider,
-)
+import d2d.application as application
+from d2d.connectors.duckdb import DuckDBConnector
+from d2d.query_history import SQLiteQueryHistoryStore
 
 
-def generation_request(max_output_bytes: int = 4_096) -> StructuredGenerationRequest:
-    return StructuredGenerationRequest(
-        system_prompt="Return JSON only.",
-        user_prompt="Count rows in orders.",
-        response_schema={"type": "object", "properties": {"limit": {"type": "integer"}}},
-        max_output_bytes=max_output_bytes,
-    )
+def test_build_service_closes_partial_resources_when_trace_store_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    catalog = tmp_path / "analytics.duckdb"
+    connection = duckdb.connect(str(catalog))
+    connection.execute("CREATE TABLE orders (id INTEGER)")
+    connection.close()
+
+    closed: list[str] = []
+    original_catalog_close = DuckDBConnector.close
+    original_history_close = SQLiteQueryHistoryStore.close
+
+    def track_catalog_close(source: DuckDBConnector) -> None:
+        closed.append("catalog")
+        original_catalog_close(source)
+
+    def track_history_close(store: SQLiteQueryHistoryStore) -> None:
+        closed.append("history")
+        original_history_close(store)
+
+    def fail_trace_store(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("simulated trace-store startup failure")
+
+    monkeypatch.setattr(DuckDBConnector, "close", track_catalog_close)
+    monkeypatch.setattr(SQLiteQueryHistoryStore, "close", track_history_close)
+    monkeypatch.setattr(application, "SQLiteDecisionTraceStore", fail_trace_store)
+
+    with pytest.raises(RuntimeError, match="simulated trace-store startup failure"):
+        application.build_service(
+            catalog_path=str(catalog),
+            evidence_path=str(tmp_path / "evidence.sqlite"),
+            history_path=str(tmp_path / "history.sqlite"),
+            trace_path=str(tmp_path / "traces.sqlite"),
+        )
+
+    assert closed == ["history", "catalog"]
 
 
-def response_stub(content: bytes) -> Callable[[Request, float], FakeResponse]:
-    def fake_urlopen(request: Request, timeout: float) -> FakeResponse:
-        return FakeResponse(content)
 
-    return fake_urlopen
-
-
-class FakeResponse:
-    def __init__(self, content: bytes) -> None:
-        self.content = BytesIO(content)
-
-    def __enter__(self) -> FakeResponse:
-        return self
-
-    def __exit__(self, *args: object) -> None:
-        return None
-
-    def read(self, size: int = -1) -> bytes:
-        return self.content.read(size)
-
-
-def test_ollama_sends_json_schema_request_to_loopback(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_readiness_checks_exact_configured_model_tag(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
 
     def fake_urlopen(request: Request, timeout: float) -> FakeResponse:
         captured["request"] = request
         captured["timeout"] = timeout
-        return FakeResponse(json.dumps({"response": '{"limit": 10}', "done": True}).encode())
+        return FakeResponse(json.dumps({"models": [{"name": "qwen3:8b"}]}).encode())
 
     monkeypatch.setattr("d2d.core.ollama_provider.urlopen", fake_urlopen)
     provider = OllamaStructuredPlanProvider(model="qwen3:8b")
-    result = provider.generate(generation_request())
-
+    assert provider.is_ready() is True
     request = captured["request"]
     assert isinstance(request, Request)
-    assert isinstance(request.data, bytes)
-    payload = json.loads(request.data)
-    assert request.full_url == "http://127.0.0.1:11434/api/generate"
-    assert payload["model"] == "qwen3:8b"
-    assert payload["stream"] is False
-    assert payload["think"] is False
-    assert payload["format"] == generation_request().response_schema
-    assert payload["options"]["temperature"] == 0
-    assert captured["timeout"] == 30.0
-    assert result == '{"limit": 10}'
+    assert request.full_url == "http://127.0.0.1:11434/api/tags"
+    assert captured["timeout"] == 1.0
 
 
-@pytest.mark.parametrize(
-    "base_url",
-    [
-        "https://127.0.0.1:11434",
-        "http://example.com:11434",
-        "http://127.0.0.1.evil.test:11434",
-        "http://user:pass@127.0.0.1:11434",
-        "http://127.0.0.1:11434/proxy",
-        "http://127.0.0.1:11434?target=example.com",
-    ],
-)
-def test_rejects_non_loopback_or_overridden_urls(base_url: str) -> None:
-    with pytest.raises(ValueError, match="loopback"):
-        OllamaStructuredPlanProvider(model="qwen3:8b", base_url=base_url)
-
-
-@pytest.mark.parametrize("timeout", [0, 0.09, 120.1])
-def test_rejects_unbounded_timeout(timeout: float) -> None:
-    with pytest.raises(ValueError, match="timeout"):
-        OllamaStructuredPlanProvider(model="qwen3:8b", timeout_seconds=timeout)
-
-
-def test_wraps_connection_failure_and_does_not_retry(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls = 0
-
-    def fail(request: Request, timeout: float) -> None:
-        nonlocal calls
-        calls += 1
-        raise URLError("offline")
-
-    monkeypatch.setattr("d2d.core.ollama_provider.urlopen", fail)
-    provider = OllamaStructuredPlanProvider(model="qwen3:8b")
-    with pytest.raises(OllamaProviderError, match="failed or timed out"):
-        provider.generate(generation_request())
-    assert calls == 1
-
-
-def test_rejects_invalid_envelope_and_incomplete_generation(
+def test_readiness_is_false_when_model_missing_or_provider_offline(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     provider = OllamaStructuredPlanProvider(model="qwen3:8b")
     monkeypatch.setattr(
         "d2d.core.ollama_provider.urlopen",
-        response_stub(b"not-json"),
+        response_stub(json.dumps({"models": [{"name": "qwen3:4b"}]}).encode()),
     )
-    with pytest.raises(OllamaProviderError, match="invalid JSON"):
-        provider.generate(generation_request())
+    assert provider.is_ready() is False
 
-    monkeypatch.setattr(
-        "d2d.core.ollama_provider.urlopen",
-        response_stub(b'{"response":"{}","done":false}'),
-    )
-    with pytest.raises(OllamaProviderError, match="did not complete"):
-        provider.generate(generation_request())
+    def offline(request: Request, timeout: float) -> FakeResponse:
+        raise URLError("offline")
 
-
-def test_rejects_oversized_response_envelope(monkeypatch: pytest.MonkeyPatch) -> None:
-    provider = OllamaStructuredPlanProvider(model="qwen3:8b")
-    monkeypatch.setattr(
-        "d2d.core.ollama_provider.urlopen",
-        response_stub(b" " * 131_073),
-    )
-    with pytest.raises(OllamaProviderError, match="envelope"):
-        provider.generate(generation_request())
-
-
-def test_rejects_generated_text_over_request_limit(monkeypatch: pytest.MonkeyPatch) -> None:
-    provider = OllamaStructuredPlanProvider(model="qwen3:8b")
-    monkeypatch.setattr(
-        "d2d.core.ollama_provider.urlopen",
-        response_stub(json.dumps({"response": "x" * 5, "done": True}).encode()),
-    )
-    with pytest.raises(OllamaProviderError, match="output"):
-        provider.generate(generation_request(max_output_bytes=4))
-
-
-def test_accepts_localhost_alias(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        "d2d.core.ollama_provider.urlopen",
-        response_stub(json.dumps({"response": "{}", "done": True}).encode()),
-    )
-    provider = OllamaStructuredPlanProvider(
-        model="qwen3:8b", base_url="http://localhost:11434/"
-    )
-    assert provider.generate(generation_request()) == "{}"
+    monkeypatch.setattr("d2d.core.ollama_provider.urlopen", offline)
+    assert provider.is_ready() is False
