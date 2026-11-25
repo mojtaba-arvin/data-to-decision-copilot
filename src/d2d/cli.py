@@ -95,8 +95,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 target=server.serve_forever, name="d2d-rest-acceptor", daemon=True
             )
             previous_sigterm = signal.signal(signal.SIGTERM, signal.default_int_handler)
-            serve_thread.start()
             try:
+                serve_thread.start()
                 scheme = "https" if args.tls_certfile else "http"
                 print(f"REST API listening on {scheme}://{args.host}:{args.port}")
                 while serve_thread.is_alive():
