@@ -6,10 +6,9 @@ from pathlib import Path
 from typing import Any
 from urllib.request import Request, urlopen
 
-import duckdb
-
 from d2d.api import create_server
 from d2d.application import build_service
+from d2d.demo import create_demo_catalog
 
 
 def _get_json(url: str) -> Any:
@@ -31,10 +30,7 @@ def _post_json(url: str, payload: dict[str, object]) -> Any:
 def test_rest_golden_path_persists_and_replays_human_decision_trace(
     tmp_path: Path,
 ) -> None:
-    catalog = tmp_path / "analytics.duckdb"
-    with duckdb.connect(str(catalog)) as connection:
-        connection.execute("CREATE TABLE orders (id INTEGER, amount INTEGER)")
-        connection.execute("INSERT INTO orders VALUES (1, 10), (2, 20)")
+    catalog = create_demo_catalog(tmp_path / "analytics.duckdb")
 
     service = build_service(
         catalog_path=str(catalog),
@@ -52,11 +48,11 @@ def test_rest_golden_path_persists_and_replays_human_decision_trace(
         schema = _get_json(base + "/v1/schema")
         tables = schema["tables"]
         assert isinstance(tables, list)
-        assert tables[0]["name"] == "orders"
+        assert tables[0]["name"] == "sales"
 
-        query = _post_json(base + "/v1/query", {"question": "count rows in orders"})
+        query = _post_json(base + "/v1/query", {"question": "count rows in sales"})
         evidence_id = query["evidence_id"]
-        assert query["rows"] == [[2]]
+        assert query["rows"] == [[4]]
         assert isinstance(evidence_id, str)
 
         decision = _post_json(
@@ -67,7 +63,7 @@ def test_rest_golden_path_persists_and_replays_human_decision_trace(
                 "decision": {
                     "action": "Review order volume before changing inventory.",
                     "rationale": (
-                        "The executed query returned two order rows; this alone "
+                        "The executed query returned four sales rows; this alone "
                         "does not establish a trend."
                     ),
                     "evidence_ids": [evidence_id],
@@ -85,7 +81,7 @@ def test_rest_golden_path_persists_and_replays_human_decision_trace(
                 },
                 "claims": [{
                     "claim_id": "observed-row-count",
-                    "statement": "The query returned 2 rows.",
+                    "statement": "The query returned 4 rows.",
                     "evidence_ids": [evidence_id],
                     "kind": "fact",
                 }],
