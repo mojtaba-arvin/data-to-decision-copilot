@@ -39,6 +39,18 @@ def make_segment(
         "payload TEXT NOT NULL, record_sha256 TEXT NOT NULL, "
         "previous_sha256 TEXT NOT NULL, entry_sha256 TEXT NOT NULL)"
     )
+    connection.execute(
+        "CREATE TABLE journal_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+    )
+    connection.executemany(
+        "INSERT INTO journal_meta(key, value) VALUES (?, ?)",
+        [
+            ("schema_version", "1"),
+            ("checkpoint_schema_version", "1"),
+            ("checkpoint_sequence", str(first - 1)),
+            ("checkpoint_sha256", previous_entry),
+        ],
+    )
     previous = previous_entry
     entries: list[tuple[int, str]] = []
     for sequence in range(first, last + 1):
