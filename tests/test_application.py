@@ -46,3 +46,32 @@ def test_build_service_closes_partial_resources_when_trace_store_fails(
         )
 
     assert closed == ["history", "catalog"]
+
+
+
+def test_readiness_includes_the_configured_ollama_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    catalog = tmp_path / "analytics.duckdb"
+    connection = duckdb.connect(str(catalog))
+    connection.execute("CREATE TABLE orders (id INTEGER)")
+    connection.close()
+
+    monkeypatch.setattr(
+        "d2d.core.ollama_provider.OllamaStructuredPlanProvider.is_ready",
+        lambda self: False,
+    )
+    service = application.build_service(
+        catalog_path=str(catalog),
+        evidence_path=str(tmp_path / "evidence.sqlite"),
+        history_path=str(tmp_path / "history.sqlite"),
+        trace_path=str(tmp_path / "traces.sqlite"),
+        provider="ollama",
+        model="qwen3:8b",
+    )
+    try:
+        report = service.readiness()
+        assert report["status"] == "not_ready"
+        assert report["checks"]["model_provider"] == "unavailable"
+    finally:
+        service.close()
