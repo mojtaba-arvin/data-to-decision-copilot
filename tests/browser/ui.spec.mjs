@@ -92,7 +92,7 @@ try {
   await page.locator("#decision-reversal").fill("Reassess after a weekly trend query.");
   await page.getByRole("button", { name: "Verify and save decision" }).click();
   await page.getByText(/Decision verified and saved/).waitFor();
-  await page.getByText(/Review sales/).waitFor();
+  await page.getByRole("button", { name: /Review sales · medium · trace-1/ }).waitFor();
 
   queryMode = "timeout";
   await page.locator("#question").fill("count rows in sales");
