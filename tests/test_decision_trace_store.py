@@ -261,10 +261,17 @@ def test_checkpoint_metadata_preserves_trace_sequence_after_archived_prefix(tmp_
         )
         connection.commit()
 
-    assert store.verify().valid
-    assert store.append(traces[2]) == 3
-    assert store.verify().valid
-    assert store.count() == 1
+    assert not store.verify().valid
+    with pytest.raises(RuntimeError, match="requires a trusted archive checkpoint"):
+        store.append(traces[2])
+
+    trusted_store = SQLiteDecisionTraceStore(
+        store.path, trusted_checkpoint=(2, head)
+    )
+    assert trusted_store.verify().valid
+    assert trusted_store.append(traces[2]) == 3
+    assert trusted_store.verify().valid
+    assert trusted_store.count() == 1
 
 
 def test_trace_checkpoint_metadata_initialization_refuses_invalid_journal(tmp_path: Path):
