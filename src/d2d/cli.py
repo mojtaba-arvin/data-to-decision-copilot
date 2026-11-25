@@ -4,9 +4,11 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import os
 from collections.abc import Sequence
 from pathlib import Path
+from threading import Thread
 
 from d2d.api import create_server
 from d2d.application import build_service
@@ -40,6 +42,10 @@ def _parser() -> argparse.ArgumentParser:
             command.add_argument("--host", default="127.0.0.1")
             command.add_argument("--port", type=int, default=8765)
             command.add_argument(
+                "--shutdown-drain-timeout-seconds", type=float, default=10.0,
+                help="Maximum time to drain active REST requests after shutdown",
+            )
+            command.add_argument(
                 "--bearer-token-env", default="D2D_REST_BEARER_TOKEN",
                 help="Environment variable containing a 32+ character bearer token for authenticated access",
             )
@@ -63,6 +69,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         model=args.model,
         isolated_worker=args.isolated_worker,
     )
+    close_service_on_exit = True
     try:
         if args.command == "query":
             result = asyncio.run(service.query(args.question))
@@ -80,17 +87,42 @@ def main(argv: Sequence[str] | None = None) -> int:
                 bearer_token=os.environ.get(args.bearer_token_env),
                 tls_certfile=args.tls_certfile, tls_keyfile=args.tls_keyfile,
             )
+            if not 0.0 <= args.shutdown_drain_timeout_seconds <= 300.0:
+                raise ValueError("shutdown drain timeout must be between 0 and 300 seconds")
+            logging.basicConfig(level=logging.INFO, format="%(message)s")
+            serve_thread = Thread(
+                target=server.serve_forever, name="d2d-rest-acceptor", daemon=True
+            )
+            serve_thread.start()
             try:
                 scheme = "https" if args.tls_certfile else "http"
                 print(f"REST API listening on {scheme}://{args.host}:{args.port}")
-                server.serve_forever()
+                while serve_thread.is_alive():
+                    serve_thread.join(timeout=0.5)
             except KeyboardInterrupt:
                 pass
             finally:
+                if serve_thread.is_alive():
+                    server.shutdown()
+                    serve_thread.join(timeout=5.0)
+                drained = (
+                    not serve_thread.is_alive()
+                    and server.wait_for_idle(args.shutdown_drain_timeout_seconds)
+                )
                 server.server_close()
-            return 0
+                if not drained:
+                    close_service_on_exit = False
+                    logging.getLogger("d2d.shutdown").critical(
+                        json.dumps({
+                            "event": "shutdown_drain_timeout",
+                            "active_requests": "at_least_one",
+                            "timeout_seconds": args.shutdown_drain_timeout_seconds,
+                        }, separators=(",", ":"))
+                    )
+            return 0 if drained else 1
     finally:
-        service.close()
+        if close_service_on_exit:
+            service.close()
     return 2
 
 
