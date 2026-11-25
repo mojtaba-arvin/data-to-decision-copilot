@@ -580,22 +580,6 @@ def test_restores_paired_journals_and_replays_traces_against_restored_evidence(
         previous_manifest=trace_one_digest,
     )
 
-    def verify_evidence_segment(path: Path, start: int, previous: str):
-        store = SQLiteEvidenceStore(
-            path, trusted_checkpoint=(start - 1, previous)
-        )
-        return store.verify_segment(
-            start_sequence=start, previous_sha256=previous
-        )
-
-    def verify_trace_segment(path: Path, start: int, previous: str):
-        store = SQLiteDecisionTraceStore(
-            path, trusted_checkpoint=(start - 1, previous)
-        )
-        return store.verify_segment(
-            start_sequence=start, previous_sha256=previous
-        )
-
     restored_directory = tmp_path / "restored-pair"
     exit_code = main([
         "journal", "restore",
