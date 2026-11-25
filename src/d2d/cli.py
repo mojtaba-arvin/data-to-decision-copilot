@@ -11,8 +11,8 @@ from pathlib import Path
 
 from d2d.api import create_server
 from d2d.application import build_service
-from d2d.demo import create_demo_catalog
 from d2d.core.journal_restore import backup_paired_journals, restore_paired_journals
+from d2d.demo import create_demo_catalog
 from d2d.mcp import run_stdio
 
 
