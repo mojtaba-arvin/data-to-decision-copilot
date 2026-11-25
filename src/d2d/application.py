@@ -25,7 +25,7 @@ from d2d.query_history import QueryHistoryItem, SQLiteQueryHistoryStore
 
 
 class CopilotService:
-    """One bounded query runtime with a small, process-local question history."""
+    """One bounded query runtime with a durable, operator-configurable question history."""
 
     def __init__(
         self,
