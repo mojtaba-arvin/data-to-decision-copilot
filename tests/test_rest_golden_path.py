@@ -58,7 +58,7 @@ def test_rest_golden_path_persists_and_replays_human_decision_trace(
         decision = _post_json(
             base + "/v1/decision",
             {
-                "question": "count rows in orders",
+                "question": "count rows in sales",
                 "evidence_id": evidence_id,
                 "decision": {
                     "action": "Review order volume before changing inventory.",
