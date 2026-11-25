@@ -294,7 +294,7 @@ def test_rest_server_closes_idle_incomplete_request_after_socket_timeout(
     thread.start()
     try:
         with socket.create_connection(server.server_address, timeout=3) as client:
-            client.sendall(b"GET /health HTTP/1.1\\r\\nHost: localhost\\r\\n")
+            client.sendall(b"GET /health HTTP/1.1\r\nHost: localhost\r\n")
             client.settimeout(3)
             assert client.recv(1) == b""
     finally:
