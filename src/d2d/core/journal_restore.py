@@ -270,6 +270,39 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _validate_source_database(
+    path: Path,
+    *,
+    journal_kind: str,
+    schema_version: int,
+) -> None:
+    if journal_kind == "evidence":
+        table_name, meta_table = "evidence_journal", "journal_meta"
+        triggers = {"evidence_no_update", "evidence_no_delete"}
+    else:
+        table_name, meta_table = "decision_trace_journal", "trace_store_meta"
+        triggers = {"decision_trace_no_update", "decision_trace_no_delete"}
+    with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)) as connection:
+        objects = {
+            (str(kind), str(name))
+            for kind, name in connection.execute(
+                "SELECT type, name FROM sqlite_master"
+            ).fetchall()
+        }
+        required = {
+            ("table", table_name),
+            ("table", meta_table),
+            *(("trigger", name) for name in triggers),
+        }
+        if not required.issubset(objects):
+            raise ValueError(f"{journal_kind} database is missing required journal schema")
+        row = connection.execute(
+            f"SELECT value FROM {meta_table} WHERE key = 'schema_version'"
+        ).fetchone()
+        if row is None or str(row[0]) != str(schema_version):
+            raise ValueError(f"{journal_kind} database schema version mismatch")
+
+
 def _write_genesis_segment_manifest(
     database: Path,
     manifest: Path,
@@ -362,6 +395,13 @@ def backup_paired_journals(
     for source in source_paths:
         if target == source or source in target.parents:
             raise ValueError("backup destination must not contain a source journal database")
+
+    _validate_source_database(
+        source_paths[0], journal_kind="evidence", schema_version=EVIDENCE_SCHEMA_VERSION
+    )
+    _validate_source_database(
+        source_paths[1], journal_kind="decision_trace", schema_version=TRACE_SCHEMA_VERSION
+    )
 
     target.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(
