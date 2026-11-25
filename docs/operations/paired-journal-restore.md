@@ -1,4 +1,32 @@
-# Paired journal restore
+# Paired journal backup and restore
+
+## Backup
+
+Create a consistent, independently verified snapshot pair without rotating or
+truncating the active journals:
+
+```bash
+d2d journal backup \
+  --evidence-db ./d2d-evidence.sqlite \
+  --trace-db ./d2d-traces.sqlite \
+  --output ./backup-2026-11-25
+```
+
+The database arguments default to `d2d-evidence.sqlite` and
+`d2d-traces.sqlite`. Both source files must already exist and contain the
+supported append-only journal schema. The command uses SQLite's online backup
+API, creates one full genesis-to-head segment for each journal, verifies the
+archive manifests and database bytes, checks every DecisionTrace against the
+backed-up Evidence journal, and atomically publishes the complete backup
+directory without overwriting an existing path. Empty genesis journals are
+supported. Non-genesis active checkpoints are rejected; rotation and checkpoint
+advancement are not part of this command.
+
+The backup includes only the Evidence and DecisionTrace journals. It does not
+include the source catalog, query history, application configuration, model
+weights, or secrets; those require separate operator backup procedures.
+
+## Restore
 
 The operator restore command reconstructs both append-only journals into one
 fresh directory:
@@ -26,7 +54,7 @@ publishes the entire directory with an atomic no-replace rename. If the host
 does not support an atomic no-replace directory rename, the command fails
 closed; it does not fall back to a non-atomic copy or overwrite.
 
-The command does **not** create archives, rotate active journals, advance
+The restore command does **not** create archives, rotate active journals, advance
 checkpoints, or prune data. Rotation and retention remain disabled pending
 crash-safe lifecycle transitions, fault-injection coverage, redundant-copy
 verification, and an explicit retention policy.
