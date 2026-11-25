@@ -87,30 +87,6 @@ def validate_server_config(
     """Validate REST bind and transport settings without opening service resources."""
     if not 0 <= port <= 65_535:
         raise ValueError("REST API port must be between 0 and 65535")
-    validate_server_config(
-        host=host,
-        port=port,
-        max_concurrent_queries=max_concurrent_queries,
-        request_socket_timeout_seconds=request_socket_timeout_seconds,
-        bearer_token=bearer_token,
-        tls_certfile=tls_certfile,
-        tls_keyfile=tls_keyfile,
-    )
-
-
-def create_server(
-    service: CopilotService, *, host: str = "127.0.0.1", port: int = 8765,
-    max_concurrent_queries: int = 4,
-    request_socket_timeout_seconds: float = 10.0,
-    bearer_token: str | None = None,
-    tls_certfile: str | None = None,
-    tls_keyfile: str | None = None,
-) -> _DrainableThreadingHTTPServer:
-    """Create a loopback or TLS-protected remote server.
-
-    request_socket_timeout_seconds bounds idle socket I/O while reading or
-    writing an HTTP request/response; it is not a total query execution deadline.
-    """
     if not 1 <= max_concurrent_queries <= 32:
         raise ValueError("max_concurrent_queries must be between 1 and 32")
     if not 1.0 <= request_socket_timeout_seconds <= 120.0:
@@ -127,6 +103,37 @@ def create_server(
         )
     if (tls_certfile is None) != (tls_keyfile is None):
         raise ValueError("TLS certificate and key must be configured together")
+    if tls_certfile is not None and tls_keyfile is not None:
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
+        try:
+            context.load_cert_chain(certfile=tls_certfile, keyfile=tls_keyfile)
+        except (OSError, ssl.SSLError) as exc:
+            raise ValueError("REST TLS certificate/key could not be loaded") from exc
+
+
+def create_server(
+    service: CopilotService, *, host: str = "127.0.0.1", port: int = 8765,
+    max_concurrent_queries: int = 4,
+    request_socket_timeout_seconds: float = 10.0,
+    bearer_token: str | None = None,
+    tls_certfile: str | None = None,
+    tls_keyfile: str | None = None,
+) -> _DrainableThreadingHTTPServer:
+    """Create a loopback or TLS-protected remote server.
+
+    request_socket_timeout_seconds bounds idle socket I/O while reading or
+    writing an HTTP request/response; it is not a total query execution deadline.
+    """
+    validate_server_config(
+        host=host,
+        port=port,
+        max_concurrent_queries=max_concurrent_queries,
+        request_socket_timeout_seconds=request_socket_timeout_seconds,
+        bearer_token=bearer_token,
+        tls_certfile=tls_certfile,
+        tls_keyfile=tls_keyfile,
+    )
 
     query_slots = BoundedSemaphore(max_concurrent_queries)
 
