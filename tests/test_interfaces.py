@@ -15,8 +15,9 @@ from urllib.request import Request, urlopen
 import duckdb
 import pytest
 
-from d2d.api import create_server
+from d2d.api import create_server, validate_server_config
 from d2d.application import build_service
+from d2d.cli import main
 from d2d.core.sql_executor import QueryExecutionError, QueryTimeoutError, QueryWorkerError
 from d2d.mcp import run_stdio
 
@@ -509,3 +510,32 @@ def test_rest_query_failures_have_safe_actionable_statuses(
         server.server_close()
         serve_thread.join(timeout=5)
         service.close()
+
+
+
+def test_invalid_remote_serve_config_fails_before_database_creation(
+    catalog: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("D2D_REST_BEARER_TOKEN", raising=False)
+    evidence_path = tmp_path / "evidence.sqlite"
+    history_path = tmp_path / "history.sqlite"
+
+    with pytest.raises(ValueError, match="remote REST binds"):
+        main([
+            "serve",
+            "--catalog", str(catalog),
+            "--host", "0.0.0.0",
+            "--evidence-db", str(evidence_path),
+            "--history-db", str(history_path),
+        ])
+
+    assert not evidence_path.exists()
+    assert not history_path.exists()
+    assert not (tmp_path / "d2d-traces.sqlite").exists()
+
+
+@pytest.mark.parametrize("port", [-1, 65_536])
+def test_server_config_rejects_invalid_port_before_bind(port: int) -> None:
+    with pytest.raises(ValueError, match="port"):
+        validate_server_config(host="127.0.0.1", port=port)
