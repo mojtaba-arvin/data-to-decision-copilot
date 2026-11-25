@@ -129,7 +129,6 @@ def create_server(
             if status == 401:
                 self.send_header("WWW-Authenticate", 'Bearer realm="d2d"')
             self.end_headers()
-            self.wfile.write(body)
             _logger.info(json.dumps({
                 "timestamp": datetime.now(UTC).isoformat(),
                 "event": "http_request",
@@ -142,6 +141,7 @@ def create_server(
                     2,
                 ),
             }, separators=(",", ":")))
+            self.wfile.write(body)
 
         def _authorized(self) -> bool:
             if bearer_token is None:
