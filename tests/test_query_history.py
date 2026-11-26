@@ -3,11 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from d2d.query_history import (
-    QueryHistoryItem,
-    SQLiteQueryHistoryStore,
-    _verify_history_database,
-)
+from d2d.query_history import QueryHistoryItem, SQLiteQueryHistoryStore
 
 
 def item(index: int) -> QueryHistoryItem:
@@ -110,11 +106,12 @@ def test_query_history_verification_detects_schema_corruption(tmp_path: Path) ->
     path = tmp_path / "history.sqlite"
     store = SQLiteQueryHistoryStore(path)
     store.append(item(1))
-    store.close()
+    try:
+        with sqlite3.connect(path) as connection:
+            connection.execute("DROP TABLE query_history")
 
-    with sqlite3.connect(path) as connection:
-        connection.execute("DROP TABLE query_history")
-
-    report = _verify_history_database(path)
-    assert not report.valid
-    assert report.error == "query-history schema mismatch"
+        report = store.verify()
+        assert not report.valid
+        assert report.error == "query-history schema mismatch"
+    finally:
+        store.close()
