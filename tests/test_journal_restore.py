@@ -3,7 +3,6 @@ from pathlib import Path
 
 import pytest
 
-from d2d.core import journal_restore
 from d2d.core.decision_trace_store import SQLiteDecisionTraceStore
 from d2d.core.evidence_store import SQLiteEvidenceStore
 from d2d.core.journal_restore import backup_paired_journals, restore_paired_journals
