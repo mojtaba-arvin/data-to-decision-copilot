@@ -50,6 +50,7 @@ def test_cli_query_failures_are_machine_readable_and_redacted(
     import d2d.cli
 
     service = _FailingService(failure)
+
     def fake_build_service(**kwargs: object) -> CopilotService:
         return cast(CopilotService, service)
 
