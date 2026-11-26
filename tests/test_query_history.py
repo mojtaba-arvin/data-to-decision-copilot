@@ -1,3 +1,4 @@
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -58,3 +59,59 @@ def test_query_history_retains_all_records_by_default(tmp_path: Path) -> None:
 def test_query_history_rejects_invalid_opt_in_retention(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="max_records"):
         SQLiteQueryHistoryStore(tmp_path / "invalid-history.sqlite", max_records=0)
+
+
+def test_query_history_backup_is_verified_and_independent(tmp_path: Path) -> None:
+    source_path = tmp_path / "history.sqlite"
+    backup_path = tmp_path / "backup" / "history.sqlite"
+    store = SQLiteQueryHistoryStore(source_path)
+    try:
+        store.append(item(1))
+        store.append(item(2))
+        verification = store.verify()
+        assert verification.valid
+        assert verification.records_checked == 2
+
+        report = store.backup(backup_path)
+        assert report.records == 2
+        assert report.bytes == backup_path.stat().st_size
+        assert len(report.sha256) == 64
+
+        store.append(item(3))
+        restored = SQLiteQueryHistoryStore(backup_path)
+        try:
+            assert [record.evidence_id for record in restored.list(limit=10)] == [
+                "evidence-2", "evidence-1",
+            ]
+            assert restored.verify().valid
+        finally:
+            restored.close()
+    finally:
+        store.close()
+
+
+def test_query_history_backup_refuses_overwrite(tmp_path: Path) -> None:
+    store = SQLiteQueryHistoryStore(tmp_path / "history.sqlite")
+    destination = tmp_path / "backup.sqlite"
+    destination.write_bytes(b"operator data")
+    try:
+        with pytest.raises(FileExistsError):
+            store.backup(destination)
+        assert destination.read_bytes() == b"operator data"
+    finally:
+        store.close()
+
+
+def test_query_history_verification_detects_schema_corruption(tmp_path: Path) -> None:
+    path = tmp_path / "history.sqlite"
+    store = SQLiteQueryHistoryStore(path)
+    store.append(item(1))
+    try:
+        with sqlite3.connect(path) as connection:
+            connection.execute("DROP TABLE query_history")
+
+        report = store.verify()
+        assert not report.valid
+        assert report.error == "query-history schema mismatch"
+    finally:
+        store.close()
