@@ -152,6 +152,15 @@ autonomous decision generation.
 
 ### Backup, restore, and upgrades
 
+The implementation contract for full runtime recovery and process-supervised
+hard-bounded REST shutdown is recorded in
+[ADR 0016](adr/0016-operational-recovery-and-bounded-shutdown.md). A paired
+journal backup is not a runtime recovery bundle: the future bundle must also
+cover the DuckDB catalog and query-history database, validate all artifacts,
+and restore into a fresh directory. Original source snapshots, secrets,
+TLS keys, host configuration, and model weights remain separately managed
+external dependencies; do not claim they are included.
+
 - [x] A paired journal backup is restored into a fresh destination in a repeatable drill (PR #64).
 - [x] The restored evidence and decision-trace journals independently verify
   and historical trace replay succeeds against the restored evidence store (PRs #63–64).
