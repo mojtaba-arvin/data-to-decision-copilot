@@ -160,10 +160,13 @@ class SQLiteQueryHistoryStore:
         if self.path == ":memory:":
             raise ValueError("in-memory query history cannot be backed up by path")
         source = Path(self.path).resolve(strict=True)
-        target = Path(destination).resolve(strict=False)
+        supplied_target = Path(destination)
+        if supplied_target.is_symlink():
+            raise FileExistsError(f"backup destination already exists: {supplied_target}")
+        target = supplied_target.resolve(strict=False)
         if source == target:
             raise ValueError("backup destination must differ from query history")
-        if target.exists() or target.is_symlink():
+        if target.exists():
             raise FileExistsError(f"backup destination already exists: {target}")
         target.parent.mkdir(parents=True, exist_ok=True)
         descriptor, temporary_name = tempfile.mkstemp(
