@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import errno
 import json
 import logging
 import os
 import signal
+import sqlite3
 from collections.abc import Sequence
 from dataclasses import asdict
 from pathlib import Path
@@ -15,6 +17,7 @@ from threading import Thread
 from d2d.api import create_server, validate_server_config
 from d2d.application import build_service
 from d2d.core.journal_restore import backup_paired_journals, restore_paired_journals
+from d2d.core.sql_executor import QueryExecutionError, QueryTimeoutError, QueryWorkerError
 from d2d.demo import create_demo_catalog
 from d2d.diagnostics import inspect_storage
 from d2d.mcp import run_stdio
@@ -148,7 +151,37 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     try:
         if args.command == "query":
-            result = asyncio.run(service.query(args.question))
+            try:
+                result = asyncio.run(service.query(args.question))
+            except ValueError:
+                print(json.dumps(
+                    {"error": "request_rejected_by_validation_or_policy"},
+                    ensure_ascii=False,
+                ))
+                return 2
+            except Exception as exc:
+                if isinstance(exc, QueryTimeoutError):
+                    code = "query_timeout"
+                elif isinstance(exc, QueryWorkerError):
+                    code = "query_worker_unavailable"
+                elif isinstance(exc, QueryExecutionError):
+                    code = "query_execution_failed"
+                elif isinstance(exc, sqlite3.OperationalError):
+                    message = str(exc).lower()
+                    code = (
+                        "storage_busy"
+                        if "locked" in message or "busy" in message
+                        else "storage_unavailable"
+                    )
+                elif isinstance(exc, sqlite3.DatabaseError) or (
+                    isinstance(exc, OSError)
+                    and exc.errno in (errno.ENOSPC, errno.EACCES, errno.EROFS)
+                ):
+                    code = "storage_unavailable"
+                else:
+                    code = "request_failed"
+                print(json.dumps({"error": code}, ensure_ascii=False))
+                return 1
             print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
             return 0
         if args.command == "schema":
