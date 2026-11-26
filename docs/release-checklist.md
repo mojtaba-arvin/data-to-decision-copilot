@@ -26,7 +26,7 @@ exact candidate commit. A green check on an earlier head SHA is not sufficient.
 - [ ] Prompt-injection regression tests fail closed at the model-to-QueryPlan boundary.
 - [ ] CSV/Parquet path, symlink, file-size, and malformed-input tests pass.
 - [ ] Evidence and DecisionTrace tamper-detection tests pass.
-- [ ] Remote REST binding remains disabled until authentication, authorization, transport security, quotas, and tenant isolation are implemented.
+- [ ] Remote REST binding is permitted only for a trusted single-tenant deployment using TLS and the shared bearer token; per-user identity, RBAC, quotas, and tenant isolation remain unavailable. Do not expose the service to untrusted users or networks. Multi-user or multi-tenant deployment remains blocked on Issue #33.
 - [ ] Query-history retention and sensitive-question storage are documented for the deployment.
 - [ ] Dependency vulnerability audit has no unreviewed findings.
 
