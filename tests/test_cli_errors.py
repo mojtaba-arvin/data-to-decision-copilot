@@ -3,9 +3,11 @@ from __future__ import annotations
 import errno
 import json
 import sqlite3
+from typing import cast
 
 import pytest
 
+from d2d.application import CopilotService
 from d2d.cli import main
 from d2d.core.sql_executor import QueryExecutionError, QueryTimeoutError, QueryWorkerError
 
@@ -48,7 +50,10 @@ def test_cli_query_failures_are_machine_readable_and_redacted(
     import d2d.cli
 
     service = _FailingService(failure)
-    monkeypatch.setattr(d2d.cli, "build_service", lambda **kwargs: service)
+    def fake_build_service(**kwargs: object) -> CopilotService:
+        return cast(CopilotService, service)
+
+    monkeypatch.setattr(d2d.cli, "build_service", fake_build_service)
 
     exit_code = main(["query", "--catalog", "catalog.duckdb", "--question", "count rows"])
 
