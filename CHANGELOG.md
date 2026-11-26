@@ -16,7 +16,7 @@ release yet; entries remain under Unreleased until a tagged release is created.
 - SQL and prompt-injection regression suites, dependency audit, benchmark harness, offline installation guide, and synthetic end-to-end example.
 
 ### Security and operational limitations
-- Remote REST access remains disabled until authentication and authorization are implemented.
+- Remote REST binding supports only trusted single-tenant deployments protected by TLS and a shared bearer token; per-user identity, RBAC, quotas, and tenant isolation are not implemented.
 - DuckDB resource limits are not OS-level sandboxing.
 - Real Ollama inference is an opt-in check, separate from mocked CI.
 - Evidence and DecisionTrace journals are append-only and do not yet provide automatic retention or compaction.
