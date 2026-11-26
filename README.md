@@ -77,6 +77,15 @@ d2d serve --catalog ./analytics.duckdb --host 127.0.0.1 --port 8765
 d2d mcp --catalog ./analytics.duckdb
 ```
 
+The CLI query command always emits JSON. Successful queries exit with status
+`0`; validation or policy rejection exits with status `2`; execution and
+infrastructure failures exit with status `1` and a stable, redacted
+`{"error":"..."}` code. Error output never includes exception text, which may
+contain local paths or sensitive provider details. The CLI currently classifies
+query timeouts, worker failures, SQL execution failures, SQLite contention,
+storage failures, and unexpected failures. This is not yet full parity for
+model-unavailable and abstention states across every interface.
+
 
 Before starting or during operation, inspect the filesystems that hold the catalog and
 SQLite stores with the read-only operator diagnostic:
