@@ -61,6 +61,24 @@ database may remove convenience history without invalidating the independently
 verified Evidence and DecisionTrace journals; loss of the catalog or source
 snapshot can prevent reproducing the original analytical context.
 
+## Runtime recovery design
+
+The implementation contract for a runtime recovery bundle is recorded in
+[ADR 0016](../adr/0016-operational-recovery-and-bounded-shutdown.md). It covers
+the DuckDB catalog and all three SQLite databases (Evidence, DecisionTrace,
+and query history), with a versioned manifest, per-artifact digests, journal
+cross-reference verification, catalog schema verification, staged restore,
+and atomic no-replace publication.
+
+Original CSV/Parquet inputs are provenance/rebuild dependencies, not serving
+dependencies after materialization into the DuckDB catalog. Keep immutable
+source snapshots and their versions/checksums in the source system's backup
+policy whenever rebuilding the catalog or regulatory reproducibility is
+required. Secrets, TLS private keys, host configuration, and Ollama model
+weights remain external dependencies and must never be copied into the bundle.
+A runtime recovery bundle must not be described as preserving these excluded
+items.
+
 ## Release gate
 
 A future full-recovery milestone must provide and test:
