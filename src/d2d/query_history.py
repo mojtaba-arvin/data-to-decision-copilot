@@ -172,9 +172,8 @@ class SQLiteQueryHistoryStore:
         os.close(descriptor)
         temporary = Path(temporary_name)
         try:
-            with self._lock:
-                with closing(sqlite3.connect(temporary)) as backup_connection:
-                    self._connection.backup(backup_connection)
+            with self._lock, closing(sqlite3.connect(temporary)) as backup_connection:
+                self._connection.backup(backup_connection)
             report = _verify_history_database(temporary)
             if not report.valid:
                 raise ValueError(f"query-history backup verification failed: {report.error}")
