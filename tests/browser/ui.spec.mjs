@@ -27,11 +27,19 @@ await page.route("**/v1/traces", (route) =>
   })
 );
 await page.route("**/v1/query", async (route) => {
-  if (queryMode === "timeout") {
+  const failures = {
+    timeout: { status: 504, error: "query_timeout" },
+    rejected: { status: 422, error: "request_rejected_by_validation_or_policy" },
+    execution: { status: 422, error: "query_execution_failed" },
+    busy: { status: 503, error: "server_busy" },
+    failed: { status: 500, error: "request_failed" },
+  };
+  if (failures[queryMode]) {
+    const failure = failures[queryMode];
     await route.fulfill({
-      status: 504,
+      status: failure.status,
       contentType: "application/json",
-      body: JSON.stringify({ error: "query_timeout" }),
+      body: JSON.stringify({ error: failure.error }),
     });
     return;
   }
@@ -102,7 +110,26 @@ try {
   await page.getByRole("button", { name: "Switch to Persian" }).click();
   assert.equal(await page.locator("html").getAttribute("dir"), "rtl");
   await page.getByText("زمان اجرای پرس‌وجو تمام شد. دامنه پرس‌وجو را محدود کنید یا بعداً دوباره تلاش کنید.").waitFor();
-  console.log("Browser UI checks passed: English/Persian RTL, query, decision, and timeout state.");
+
+  queryMode = "rejected";
+  await page.locator("#question").fill("unsupported request");
+  await page.getByRole("button", { name: "اجرای پرس‌وجو" }).click();
+  await page.getByText("پرس‌وجو توسط اعتبارسنجی یا سیاست ایمنی رد شد. سؤال را بررسی کنید و درخواست پشتیبانی‌شده‌ای بفرستید.").waitFor();
+
+  await page.getByRole("button", { name: "تغییر زبان به انگلیسی" }).click();
+  queryMode = "execution";
+  await page.locator("#question").fill("count rows in sales");
+  await page.getByRole("button", { name: "Run query" }).click();
+  await page.getByText("The query could not be executed against the catalog. Check the query scope and catalog state.").waitFor();
+
+  queryMode = "busy";
+  await page.getByRole("button", { name: "Run query" }).click();
+  await page.getByText("The service is handling its current workload. Wait briefly and retry.").waitFor();
+
+  queryMode = "failed";
+  await page.getByRole("button", { name: "Run query" }).click();
+  await page.getByText("The service could not complete the request. Check service health and operator logs.").waitFor();
+  console.log("Browser UI checks passed: bilingual RTL, query, decision, timeout, rejection, execution, busy, and generic failure states.");
 } finally {
   await browser.close();
 }
