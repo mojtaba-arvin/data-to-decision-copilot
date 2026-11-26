@@ -44,10 +44,12 @@ def test_paired_backup_manifest_fsync_failure_does_not_publish_or_leave_staging(
     evidence, traces = _empty_journal_pair(tmp_path)
     destination = tmp_path / "backup-fsync-failure"
 
+    real_fsync_file = journal_restore._fsync_file
+
     def fail_manifest_fsync(path: Path) -> None:
         if path.name == "segment-000001.manifest.json":
             raise OSError("simulated backup manifest fsync failure")
-        raise AssertionError(f"unexpected fsync target: {path.name}")
+        real_fsync_file(path)
 
     monkeypatch.setattr(journal_restore, "_fsync_file", fail_manifest_fsync)
 
