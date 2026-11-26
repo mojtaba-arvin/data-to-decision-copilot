@@ -188,13 +188,14 @@ class SQLiteQueryHistoryStore:
             finally:
                 os.close(file_descriptor)
             os.link(temporary, target)
-            directory_descriptor = os.open(
-                target.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-            )
-            try:
-                os.fsync(directory_descriptor)
-            finally:
-                os.close(directory_descriptor)
+            if os.name != "nt":
+                directory_descriptor = os.open(
+                    target.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+                )
+                try:
+                    os.fsync(directory_descriptor)
+                finally:
+                    os.close(directory_descriptor)
             return QueryHistoryBackupReport(
                 path=str(target),
                 records=report.records_checked,
