@@ -1,8 +1,13 @@
+import sqlite3
 from pathlib import Path
 
 import pytest
 
-from d2d.query_history import QueryHistoryItem, SQLiteQueryHistoryStore
+from d2d.query_history import (
+    QueryHistoryItem,
+    SQLiteQueryHistoryStore,
+    _verify_history_database,
+)
 
 
 def item(index: int) -> QueryHistoryItem:
@@ -101,14 +106,15 @@ def test_query_history_backup_refuses_overwrite(tmp_path: Path) -> None:
         store.close()
 
 
-def test_query_history_verification_detects_corruption(tmp_path: Path) -> None:
+def test_query_history_verification_detects_schema_corruption(tmp_path: Path) -> None:
     path = tmp_path / "history.sqlite"
     store = SQLiteQueryHistoryStore(path)
     store.append(item(1))
     store.close()
 
-    with path.open("ab") as stream:
-        stream.write(b"not-a-valid-sqlite-page")
+    with sqlite3.connect(path) as connection:
+        connection.execute("DROP TABLE query_history")
 
-    report = SQLiteQueryHistoryStore(path).verify()
+    report = _verify_history_database(path)
     assert not report.valid
+    assert report.error == "query-history schema mismatch"
