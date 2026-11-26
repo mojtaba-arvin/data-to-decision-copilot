@@ -79,6 +79,10 @@ const translations = {
     truncated: 'Result is truncated by configured limits.', queryTimeout: 'Query timed out. Reduce the query scope or retry later.',
     workerUnavailable: 'Query worker is unavailable. Check the service process and retry.',
     storageBusy: 'Storage is busy. Wait briefly and retry.', storageUnavailable: 'Storage is unavailable or full. Check disk space and database permissions.',
+    queryRejected: 'The query was rejected by validation or safety policy. Check the question and try a supported request.',
+    queryExecutionFailed: 'The query could not be executed against the catalog. Check the query scope and catalog state.',
+    serverBusy: 'The service is handling its current workload. Wait briefly and retry.',
+    requestFailed: 'The service could not complete the request. Check service health and operator logs.',
     queryFailed: 'The query could not be completed. Check the request and service logs.',
     decisionVerifying: 'Verifying proposal and evidence…', runFirst: 'Run a query first.',
     decisionSaved: 'Decision verified and saved.', decisionRejected: 'Decision proposal was rejected by validation or policy.',
@@ -105,6 +109,10 @@ const translations = {
     workerUnavailable: 'پردازشگر پرس‌وجو در دسترس نیست. وضعیت سرویس را بررسی و دوباره تلاش کنید.',
     storageBusy: 'پایگاه داده مشغول است. کمی صبر کنید و دوباره تلاش کنید.',
     storageUnavailable: 'ذخیره‌سازی در دسترس نیست یا فضای دیسک کافی نیست. فضا و مجوزهای پایگاه داده را بررسی کنید.',
+    queryRejected: 'پرس‌وجو توسط اعتبارسنجی یا سیاست ایمنی رد شد. سؤال را بررسی کنید و درخواست پشتیبانی‌شده‌ای بفرستید.',
+    queryExecutionFailed: 'اجرای پرس‌وجو روی کاتالوگ ناموفق بود. دامنه پرس‌وجو و وضعیت کاتالوگ را بررسی کنید.',
+    serverBusy: 'سرویس مشغول پردازش درخواست‌های فعلی است. کمی صبر کنید و دوباره تلاش کنید.',
+    requestFailed: 'سرویس نتوانست درخواست را تکمیل کند. سلامت سرویس و گزارش‌های اپراتور را بررسی کنید.',
     queryFailed: 'اجرای پرس‌وجو ناموفق بود. درخواست و گزارش‌های سرویس را بررسی کنید.',
     decisionVerifying: 'در حال بررسی پیشنهاد و شواهد…', runFirst: 'ابتدا یک پرس‌وجو اجرا کنید.',
     decisionSaved: 'تصمیم بررسی و ذخیره شد.', decisionRejected: 'پیشنهاد تصمیم توسط اعتبارسنجی یا سیاست رد شد.',
@@ -233,7 +241,21 @@ $('query-form').addEventListener('submit', async (event) => {
     }, null, 2);
     messageKey = data.truncated ? 'truncated' : 'queryCompleted'; $('message').textContent = tr(messageKey);
     await refresh();
-  } catch (error) { const code = error.message; messageKey = ({query_timeout:'queryTimeout',query_worker_unavailable:'workerUnavailable',storage_busy:'storageBusy',storage_unavailable:'storageUnavailable'}[code] || 'queryFailed'); $('message').textContent = tr(messageKey); $('message').className = 'error'; }
+  } catch (error) {
+    const code = error.message;
+    messageKey = ({
+      query_timeout: 'queryTimeout',
+      query_worker_unavailable: 'workerUnavailable',
+      storage_busy: 'storageBusy',
+      storage_unavailable: 'storageUnavailable',
+      request_rejected_by_validation_or_policy: 'queryRejected',
+      query_execution_failed: 'queryExecutionFailed',
+      server_busy: 'serverBusy',
+      request_failed: 'requestFailed'
+    }[code] || 'queryFailed');
+    $('message').textContent = tr(messageKey);
+    $('message').className = 'error';
+  }
   finally { $('submit').disabled = false; }
 });
 $('decision-form').addEventListener('submit', async (event) => {
