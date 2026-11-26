@@ -173,10 +173,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                         if "locked" in message or "busy" in message
                         else "storage_unavailable"
                     )
-                elif isinstance(exc, sqlite3.DatabaseError):
-                    code = "storage_unavailable"
-                elif isinstance(exc, OSError) and exc.errno in (
-                    errno.ENOSPC, errno.EACCES, errno.EROFS
+                elif isinstance(exc, sqlite3.DatabaseError) or (
+                    isinstance(exc, OSError)
+                    and exc.errno in (errno.ENOSPC, errno.EACCES, errno.EROFS)
                 ):
                     code = "storage_unavailable"
                 else:
