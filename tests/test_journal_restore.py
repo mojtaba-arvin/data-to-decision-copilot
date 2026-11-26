@@ -44,14 +44,14 @@ def test_paired_backup_manifest_fsync_failure_does_not_publish_or_leave_staging(
     evidence, traces = _empty_journal_pair(tmp_path)
     destination = tmp_path / "backup-fsync-failure"
 
-    real_fsync_file = journal_restore._fsync_file
+    real_fsync_file = getattr(journal_restore, "_fsync_file")
 
     def fail_manifest_fsync(path: Path) -> None:
         if path.name == "segment-000001.manifest.json":
             raise OSError("simulated backup manifest fsync failure")
         real_fsync_file(path)
 
-    monkeypatch.setattr(journal_restore, "_fsync_file", fail_manifest_fsync)
+    monkeypatch.setattr("d2d.core.journal_restore._fsync_file", fail_manifest_fsync)
 
     with pytest.raises(OSError, match="backup manifest fsync failure"):
         backup_paired_journals(evidence, traces, destination)
@@ -87,14 +87,14 @@ def test_paired_backup_parent_fsync_failure_keeps_complete_published_bundle(
 ) -> None:
     evidence, traces = _empty_journal_pair(tmp_path)
     destination = tmp_path / "backup-parent-fsync-failure"
-    real_fsync_directory = journal_restore._fsync_directory
+    real_fsync_directory = getattr(journal_restore, "_fsync_directory")
 
     def fail_parent_fsync(path: Path) -> None:
         if path == destination.parent:
             raise OSError("simulated backup parent directory fsync failure")
         real_fsync_directory(path)
 
-    monkeypatch.setattr(journal_restore, "_fsync_directory", fail_parent_fsync)
+    monkeypatch.setattr("d2d.core.journal_restore._fsync_directory", fail_parent_fsync)
 
     with pytest.raises(OSError, match="backup parent directory fsync failure"):
         backup_paired_journals(evidence, traces, destination)
