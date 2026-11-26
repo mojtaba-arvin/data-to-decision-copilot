@@ -101,8 +101,13 @@ autonomous decision generation.
   DecisionTrace listing and replay (PR #57).
 - [ ] CLI, REST, and browser UI communicate success, abstention, validation
   failure, timeout, and unavailable-model states consistently.
+  - [x] CLI query failures now emit stable, redacted JSON error codes and
+    distinct exit statuses for validation/policy rejection, timeout, worker,
+    SQL execution, SQLite contention, storage, and unexpected failures.
   - [x] Browser UI maps timeout, worker, and storage errors to user-facing
-    messages; CLI parity and the full abstention/validation matrix remain open (PRs #75, #77).
+    messages (PRs #75, #77).
+  - [ ] Full cross-interface abstention/invalid-input/unavailable-model matrix
+    and live browser-to-service deployment drill remain open.
 - [ ] Persian/English and RTL behavior are tested in the browser UI, not only
   in isolated formatting helpers.
   - [x] Chromium covers language switching, document `lang`/`dir`, query,
