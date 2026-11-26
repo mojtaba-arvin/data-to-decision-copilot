@@ -74,7 +74,8 @@ def test_paired_backup_no_replace_race_preserves_operator_destination(
         raise FileExistsError(target)
 
     monkeypatch.setattr(
-        journal_restore, "_rename_directory_no_replace", race_with_operator_directory
+        "d2d.core.journal_restore._rename_directory_no_replace",
+        race_with_operator_directory,
     )
 
     with pytest.raises(FileExistsError):
