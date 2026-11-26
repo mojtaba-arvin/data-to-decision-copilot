@@ -101,11 +101,13 @@ autonomous decision generation.
   DecisionTrace listing and replay (PR #57).
 - [ ] CLI, REST, and browser UI communicate success, abstention, validation
   failure, timeout, and unavailable-model states consistently.
-  - [x] CLI query failures now emit stable, redacted JSON error codes and
-    distinct exit statuses for validation/policy rejection, timeout, worker,
-    SQL execution, SQLite contention, storage, and unexpected failures.
-  - [x] Browser UI maps timeout, worker, and storage errors to user-facing
-    messages (PRs #75, #77).
+  - [x] CLI query failures emit stable, redacted JSON error codes and distinct
+    exit statuses for validation/policy rejection, timeout, worker, SQL
+    execution, SQLite contention, storage, and unexpected failures (PR #85).
+  - [x] Browser UI maps timeout, worker, storage, validation/policy rejection,
+    catalog execution, service saturation, and unexpected failures to
+    operator-facing messages; Playwright covers the expanded failure matrix
+    with English/Persian policy-rejection messaging (PR #86).
   - [ ] Full cross-interface abstention/invalid-input/unavailable-model matrix
     and live browser-to-service deployment drill remain open.
 - [ ] Persian/English and RTL behavior are tested in the browser UI, not only
