@@ -5,6 +5,7 @@ import hashlib
 import os
 import sqlite3
 import tempfile
+from contextlib import closing
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from threading import Lock
@@ -172,7 +173,7 @@ class SQLiteQueryHistoryStore:
         temporary = Path(temporary_name)
         try:
             with self._lock:
-                with sqlite3.connect(temporary) as backup_connection:
+                with closing(sqlite3.connect(temporary)) as backup_connection:
                     self._connection.backup(backup_connection)
             report = _verify_history_database(temporary)
             if not report.valid:
