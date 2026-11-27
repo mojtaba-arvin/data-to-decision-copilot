@@ -147,7 +147,7 @@ def validate(pr, commits):
             errors.append(f"{sha}: unexpected web-flow committer metadata")
 
         for line in (commit.get("message") or "").splitlines():
-            if line.lower().startswith("co-authored-by:"):
+            if line.strip().lower().startswith("co-authored-by:"):
                 identity = line.split(":", 1)[1].strip()
                 if is_bot(identity, ""):
                     errors.append(
@@ -275,7 +275,7 @@ def self_test():
     )
     message = (
         "feat: test\n"
-        "Co-authored-by: Copilot <copilot[bot]@users.noreply.github.com>"
+        " Co-authored-by: Dependabot <dependabot[bot]@users.noreply.github.com>"
     )
     check(
         empty,
