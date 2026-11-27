@@ -101,21 +101,19 @@ def validate(pr, commits):
         if not committer_name or not committer_email:
             errors.append(f"{sha}: missing commit committer name/email")
 
-        if is_bot(author_name, author_email, author_login, author.get("type")):
-            if not auto_commit:
-                errors.append(
-                    f"{sha}: bot/agent author rejected: "
-                    f"{author_name!r} <{author_email}> login={author_login!r}"
-                )
+        if is_bot(author_name, author_email, author_login, author.get("type")) and not auto_commit:
+            errors.append(
+                f"{sha}: bot/agent author rejected: "
+                f"{author_name!r} <{author_email}> login={author_login!r}"
+            )
         if is_bot(
             committer_name, committer_email, committer_login, committer.get("type")
-        ):
-            if not auto_commit:
-                errors.append(
-                    f"{sha}: bot/agent committer rejected: "
-                    f"{committer_name!r} <{committer_email}> "
-                    f"login={committer_login!r}"
-                )
+        ) and not auto_commit:
+            errors.append(
+                f"{sha}: bot/agent committer rejected: "
+                f"{committer_name!r} <{committer_email}> "
+                f"login={committer_login!r}"
+            )
 
         if author_login == "web-flow":
             errors.append(f"{sha}: web-flow is a committer identity, not an author")
@@ -145,9 +143,8 @@ def validate(pr, commits):
                 f"not {committer_login!r}"
             )
 
-        if committer_login == "web-flow":
-            if not web_flow_committer(item):
-                errors.append(f"{sha}: unexpected web-flow committer metadata")
+        if committer_login == "web-flow" and not web_flow_committer(item):
+            errors.append(f"{sha}: unexpected web-flow committer metadata")
 
         for line in (commit.get("message") or "").splitlines():
             if line.lower().startswith("co-authored-by:"):
