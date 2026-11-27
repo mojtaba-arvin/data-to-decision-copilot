@@ -117,6 +117,9 @@ def validate(pr, commits):
                     f"login={committer_login!r}"
                 )
 
+        if author_login == "web-flow":
+            errors.append(f"{sha}: web-flow is a committer identity, not an author")
+
         if author_login == LOGIN:
             maintainer_commit_seen = True
             if author_name != NAME or author_email.lower() != EMAIL.lower():
@@ -223,6 +226,7 @@ def self_test():
         False,
     )
     check(empty, [item("Copilot", "bot@example.org", "copilot[bot]", "Bot")], True)
+    check(empty, [item("GitHub", "noreply@github.com", "web-flow", "User")], True)
     check(
         empty,
         [item(
@@ -239,6 +243,16 @@ def self_test():
             "github-actions[bot]", "Bot",
         )],
         True,
+    )
+    dependabot = item(
+        "dependabot[bot]", AUTOMATION["dependabot[bot]"]["email"],
+        "dependabot[bot]", "Bot",
+    )
+    check(empty, [dependabot], True)
+    check(
+        {"body": "", "labels": [{"name": AUTO_LABEL}]},
+        [dependabot],
+        False,
     )
     automation = item(
         "github-actions[bot]", AUTOMATION["github-actions[bot]"]["email"],
