@@ -25,7 +25,9 @@ AUTOMATION = {
 BOT_MARKERS = (
     "[bot]", "ai agent", "ai-agent", "agent bot", "copilot", "claude",
     "cursor", "windsurf", "codex", "chatgpt", "gemini", "openai", "gpt",
-    "ai assistant", "assistant bot",
+    "ai assistant", "assistant bot", "dependabot", "github-actions",
+    "renovate", "aider", "codeium", "tabnine", "devin", "sourcegraph cody",
+    "amazon q", "replit agent",
 )
 
 
@@ -242,11 +244,7 @@ def self_test():
         "github-actions[bot]", AUTOMATION["github-actions[bot]"]["email"],
         "github-actions[bot]", "Bot",
     )
-    check(
-        {"body": "", "labels": [{"name": AUTO_LABEL}]},
-        [automation],
-        False,
-    )
+    check(empty, [automation], True)
     check(
         {"body": "", "labels": [{"name": AUTO_LABEL}]},
         [automation],
