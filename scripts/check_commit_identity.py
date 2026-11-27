@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate commit authors and co-author trailers for a GitHub pull request."""
+"""Validate GitHub pull-request commit author and committer attribution."""
 import argparse
 import json
 import os
@@ -9,148 +9,338 @@ import urllib.request
 
 NAME = "Mojtaba Arvin"
 EMAIL = "m.arvin@live.com"
+LOGIN = "mojtaba-arvin"
 MARKER = "<!-- maintainer-directed-ai-work -->"
 AUTO_LABEL = "allow-automation-commits"
-AUTO_LOGINS = {"github-actions[bot]", "dependabot[bot]"}
-BOT_MARKERS = ("[bot]", "ai agent", "ai-agent", "agent bot", "copilot", "claude",
-               "cursor", "windsurf", "codex", "chatgpt", "gemini", "openai", "gpt", "ai assistant", "assistant bot")
+AUTOMATION = {
+    "github-actions[bot]": {
+        "name": "github-actions[bot]",
+        "email": "41898282+github-actions[bot]@users.noreply.github.com",
+    },
+    "dependabot[bot]": {
+        "name": "dependabot[bot]",
+        "email": "49699333+dependabot[bot]@users.noreply.github.com",
+    },
+}
+BOT_MARKERS = (
+    "[bot]", "ai agent", "ai-agent", "agent bot", "copilot", "claude",
+    "cursor", "windsurf", "codex", "chatgpt", "gemini", "openai", "gpt",
+    "ai assistant", "assistant bot",
+)
 
 
 def is_bot(name, email, login=None, account_type=None):
+    """Recognize GitHub bot accounts and common agent identity markers."""
     if (account_type or "").lower() == "bot":
         return True
     if login and login.lower().endswith("[bot]"):
         return True
-    value = (name + " " + email + " " + (login or "")).lower()
+    value = f"{name} {email} {login or ''}".lower()
     return any(marker in value for marker in BOT_MARKERS)
+
+
+def genuine_automation(item, allow_auto):
+    """Require the same allowlisted GitHub bot as mapped author and committer."""
+    if not allow_auto:
+        return False
+    author = item.get("author") or {}
+    committer = item.get("committer") or {}
+    login = author.get("login")
+    expected = AUTOMATION.get(login)
+    if not expected or committer.get("login") != login:
+        return False
+    if author.get("type") != "Bot" or committer.get("type") != "Bot":
+        return False
+    for role in ("author", "committer"):
+        metadata = (item.get("commit") or {}).get(role) or {}
+        if metadata.get("name") != expected["name"]:
+            return False
+        if (metadata.get("email") or "").lower() != expected["email"]:
+            return False
+    return True
+
+
+def web_flow_committer(item):
+    """Allow GitHub's distinct web-flow committer without treating it as author."""
+    account = item.get("committer") or {}
+    metadata = (item.get("commit") or {}).get("committer") or {}
+    return (
+        account.get("login") == "web-flow"
+        and account.get("type") == "User"
+        and metadata.get("name") == "GitHub"
+        and (metadata.get("email") or "").lower() == "noreply@github.com"
+    )
 
 
 def validate(pr, commits):
     errors = []
-    labels = {x.get("name", "") for x in pr.get("labels", [])}
+    labels = {label.get("name", "") for label in pr.get("labels", [])}
     allow_auto = AUTO_LABEL in labels
     maintainer_work = MARKER in (pr.get("body") or "")
     maintainer_commit_seen = False
+
     for item in commits:
-        c = item.get("commit", {})
-        a = c.get("author") or {}
-        gh = item.get("author") or {}
-        name, email = a.get("name") or "", a.get("email") or ""
-        login, typ = gh.get("login"), gh.get("type")
+        commit = item.get("commit") or {}
+        author = item.get("author") or {}
+        committer = item.get("committer") or {}
+        author_data = commit.get("author") or {}
+        committer_data = commit.get("committer") or {}
+        author_name = author_data.get("name") or ""
+        author_email = author_data.get("email") or ""
+        committer_name = committer_data.get("name") or ""
+        committer_email = committer_data.get("email") or ""
+        author_login = author.get("login")
+        committer_login = committer.get("login")
         sha = (item.get("sha") or "unknown")[:12]
-        if not name or not email:
-            errors.append(sha + ": missing author name/email")
-        if is_bot(name, email, login, typ):
-            allowed = allow_auto and login in AUTO_LOGINS and typ == "Bot"
-            if not allowed:
-                errors.append(f"{sha}: bot/agent author rejected: {name!r} <{email}> login={login!r}")
-        if login == "mojtaba-arvin":
-            maintainer_commit_seen = True
-            if name != NAME or email.lower() != EMAIL.lower():
+        auto_commit = genuine_automation(item, allow_auto)
+
+        if not author_name or not author_email:
+            errors.append(f"{sha}: missing commit author name/email")
+        if not committer_name or not committer_email:
+            errors.append(f"{sha}: missing commit committer name/email")
+
+        if is_bot(author_name, author_email, author_login, author.get("type")):
+            if not auto_commit:
                 errors.append(
-                    f"{sha}: maintainer account must use {NAME} <{EMAIL}>, "
-                    f"got {name!r} <{email}>"
+                    f"{sha}: bot/agent author rejected: "
+                    f"{author_name!r} <{author_email}> login={author_login!r}"
                 )
-        elif email.lower() == EMAIL.lower():
+        if is_bot(
+            committer_name, committer_email, committer_login, committer.get("type")
+        ):
+            if not auto_commit:
+                errors.append(
+                    f"{sha}: bot/agent committer rejected: "
+                    f"{committer_name!r} <{committer_email}> "
+                    f"login={committer_login!r}"
+                )
+
+        if author_login == LOGIN:
+            maintainer_commit_seen = True
+            if author_name != NAME or author_email.lower() != EMAIL.lower():
+                errors.append(
+                    f"{sha}: maintainer author must use {NAME} <{EMAIL}>, "
+                    f"got {author_name!r} <{author_email}>"
+                )
+        elif author_email.lower() == EMAIL.lower():
             errors.append(
-                f"{sha}: maintainer email must resolve to mojtaba-arvin, "
-                f"not {login!r}"
+                f"{sha}: maintainer email must resolve to {LOGIN}, "
+                f"not {author_login!r}"
             )
-        for line in (c.get("message") or "").splitlines():
+
+        if committer_login == LOGIN:
+            if committer_name != NAME or committer_email.lower() != EMAIL.lower():
+                errors.append(
+                    f"{sha}: maintainer committer must use {NAME} <{EMAIL}>, "
+                    f"got {committer_name!r} <{committer_email}>"
+                )
+        elif committer_email.lower() == EMAIL.lower():
+            errors.append(
+                f"{sha}: maintainer email must resolve to {LOGIN} as committer, "
+                f"not {committer_login!r}"
+            )
+
+        if committer_login == "web-flow":
+            if not web_flow_committer(item):
+                errors.append(f"{sha}: unexpected web-flow committer metadata")
+
+        for line in (commit.get("message") or "").splitlines():
             if line.lower().startswith("co-authored-by:"):
                 identity = line.split(":", 1)[1].strip()
                 if is_bot(identity, ""):
-                    errors.append(f"{sha}: bot/AI Co-authored-by trailer rejected: {identity!r}")
+                    errors.append(
+                        f"{sha}: bot/AI Co-authored-by trailer rejected: {identity!r}"
+                    )
+
     if maintainer_work and not maintainer_commit_seen:
         errors.append(
             "maintainer-directed AI work marker requires at least one commit "
-            "authored by mojtaba-arvin"
+            f"authored by {LOGIN}"
         )
     return errors
 
 
 def get_json(url, token):
-    req = urllib.request.Request(url, headers={
-        "Accept": "application/vnd.github+json",
-        "Authorization": "Bearer " + token,
-        "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "commit-identity-policy-check"})
-    with urllib.request.urlopen(req, timeout=30) as res:
-        return json.loads(res.read().decode())
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "Authorization": "Bearer " + token,
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "commit-identity-policy-check",
+        },
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return json.loads(response.read().decode())
 
 
 def self_test():
-    def item(name, email, login, typ, message="feat: test"):
-        return {"sha": "a" * 40, "commit": {"author": {"name": name, "email": email},
-                "message": message}, "author": {"login": login, "type": typ}}
-    assert not validate({"body": "", "labels": []}, [item(NAME, EMAIL, "mojtaba-arvin", "User")])
-    assert not validate({"body": "", "labels": []}, [item("External Human", "x@example.org", "human", "User")])
-    assert validate({"body": "", "labels": []}, [item("Copilot", "bot@example.org", "copilot[bot]", "Bot")])
-    msg = "feat: test\nCo-authored-by: Copilot <copilot[bot]@users.noreply.github.com>"
-    assert validate({"body": "", "labels": []}, [item("Human", "h@e.org", "human", "User", msg)])
-    assert not validate({"body": MARKER, "labels": []}, [item(NAME, EMAIL, "mojtaba-arvin", "User")])
-    assert not validate(
-        {"body": MARKER, "labels": []},
-        [
-            item(NAME, EMAIL, "mojtaba-arvin", "User"),
-            item("Other Human", "x@example.org", "human", "User"),
-        ],
+    def item(
+        author_name, author_email, author_login, author_type,
+        committer_name=None, committer_email=None, committer_login=None,
+        committer_type=None, message="feat: test",
+    ):
+        return {
+            "sha": "a" * 40,
+            "commit": {
+                "author": {"name": author_name, "email": author_email},
+                "committer": {
+                    "name": committer_name or author_name,
+                    "email": committer_email or author_email,
+                },
+                "message": message,
+            },
+            "author": {"login": author_login, "type": author_type},
+            "committer": {
+                "login": committer_login or author_login,
+                "type": committer_type or author_type,
+            },
+        }
+
+    def check(pr, commits, expected):
+        actual = validate(pr, commits)
+        assert bool(actual) is expected, actual
+
+    empty = {"body": "", "labels": []}
+    marked = {"body": MARKER, "labels": []}
+    check(empty, [item(NAME, EMAIL, LOGIN, "User")], False)
+    check(
+        marked,
+        [item(
+            NAME, EMAIL, LOGIN, "User",
+            "GitHub", "noreply@github.com", "web-flow", "User",
+        )],
+        False,
     )
-    assert validate(
-        {"body": MARKER, "labels": []},
-        [item("Other Human", "x@example.org", "human", "User")],
+    check(
+        empty,
+        [item(
+            "External Human", "human@example.org", "external-human", "User",
+            "GitHub", "noreply@github.com", "web-flow", "User",
+        )],
+        False,
     )
-    assert validate(
-        {"body": "", "labels": []},
-        [item(NAME, "wrong@example.org", "mojtaba-arvin", "User")],
+    check(empty, [item("Copilot", "bot@example.org", "copilot[bot]", "Bot")], True)
+    check(
+        empty,
+        [item(
+            "Human", "human@example.org", "human", "User",
+            "dependabot[bot]", AUTOMATION["dependabot[bot]"]["email"],
+            "dependabot[bot]", "Bot",
+        )],
+        True,
     )
-    assert not validate({"body": "", "labels": [{"name": AUTO_LABEL}]},
-                        [item("github-actions[bot]", "bot@users.noreply.github.com", "github-actions[bot]", "Bot")])
-    print("PASS: commit identity policy self-tests")
+    check(
+        empty,
+        [item(
+            "github-actions[bot]", AUTOMATION["github-actions[bot]"]["email"],
+            "github-actions[bot]", "Bot",
+        )],
+        True,
+    )
+    automation = item(
+        "github-actions[bot]", AUTOMATION["github-actions[bot]"]["email"],
+        "github-actions[bot]", "Bot",
+    )
+    check(
+        {"body": "", "labels": [{"name": AUTO_LABEL}]},
+        [automation],
+        False,
+    )
+    check(
+        {"body": "", "labels": [{"name": AUTO_LABEL}]},
+        [automation],
+        False,
+    )
+    automation["committer"]["login"] = "mojtaba-arvin"
+    check(
+        {"body": "", "labels": [{"name": AUTO_LABEL}]},
+        [automation],
+        True,
+    )
+    automation["committer"]["login"] = "github-actions[bot]"
+    check(
+        {"body": "", "labels": [{"name": AUTO_LABEL}]},
+        [automation],
+        False,
+    )
+    message = (
+        "feat: test\n"
+        "Co-authored-by: Copilot <copilot[bot]@users.noreply.github.com>"
+    )
+    check(
+        empty,
+        [item("Human", "human@example.org", "human", "User", message=message)],
+        True,
+    )
+    check(
+        marked,
+        [item("External Human", "human@example.org", "human", "User")],
+        True,
+    )
+    check(
+        empty,
+        [item(NAME, "wrong@example.org", LOGIN, "User")],
+        True,
+    )
+    print("PASS: commit identity and attribution self-tests")
 
 
 def main():
-    p = argparse.ArgumentParser()
-    p.add_argument("--repository", default=os.getenv("GITHUB_REPOSITORY"))
-    p.add_argument("--pr-number", type=int, default=int(os.getenv("PR_NUMBER", "0")))
-    p.add_argument("--token", default=os.getenv("GITHUB_TOKEN"))
-    p.add_argument("--self-test", action="store_true")
-    args = p.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--repository", default=os.getenv("GITHUB_REPOSITORY"))
+    parser.add_argument(
+        "--pr-number", type=int, default=int(os.getenv("PR_NUMBER", "0"))
+    )
+    parser.add_argument("--token", default=os.getenv("GITHUB_TOKEN"))
+    parser.add_argument("--self-test", action="store_true")
+    args = parser.parse_args()
+
     if args.self_test:
         self_test()
     if not (args.repository and args.pr_number and args.token):
         if args.self_test and not args.pr_number:
             return 0
-        p.error("--repository, --pr-number and --token are required")
+        parser.error("--repository, --pr-number and --token are required")
+
     base = "https://api.github.com/repos/" + args.repository
     pr = get_json(base + "/pulls/" + str(args.pr_number), args.token)
-    commits, page = [], 1
+    commits = []
+    page = 1
     while True:
-        batch = get_json(base + f"/pulls/{args.pr_number}/commits?per_page=100&page={page}", args.token)
+        batch = get_json(
+            base + f"/pulls/{args.pr_number}/commits?per_page=100&page={page}",
+            args.token,
+        )
         if not isinstance(batch, list):
             raise RuntimeError("GitHub API returned a non-list commit response")
         commits.extend(batch)
         if len(batch) < 100:
             break
         page += 1
+
     if not commits:
         print("ERROR: empty PR commit list; refusing to pass")
         return 2
+
     errors = validate(pr, commits)
     print(f"Checked {len(commits)} commits in {args.repository}#{args.pr_number}")
     if errors:
-        print("\n".join("ERROR: " + e for e in errors))
+        print("\n".join("ERROR: " + error for error in errors))
         return 1
-    print("PASS: no prohibited bot/agent authors or co-author trailers")
+    print("PASS: no prohibited bot/agent authors, committers, or co-author trailers")
     return 0
 
 
 if __name__ == "__main__":
     try:
         sys.exit(main())
-    except urllib.error.HTTPError as e:
-        print(f"ERROR: GitHub API HTTP {e.code}: {e.reason}", file=sys.stderr)
+    except urllib.error.HTTPError as error:
+        print(
+            f"ERROR: GitHub API HTTP {error.code}: {error.reason}",
+            file=sys.stderr,
+        )
         sys.exit(2)
-    except (urllib.error.URLError, TimeoutError, ValueError, RuntimeError) as e:
-        print(f"ERROR: identity validation incomplete: {e}", file=sys.stderr)
+    except (urllib.error.URLError, TimeoutError, ValueError, RuntimeError) as error:
+        print(f"ERROR: identity validation incomplete: {error}", file=sys.stderr)
         sys.exit(2)
