@@ -38,7 +38,11 @@ def is_bot(name, email, login=None, account_type=None):
     if login and login.lower().endswith("[bot]"):
         return True
     value = f"{name} {email} {login or ''}".lower()
-    return any(marker in value for marker in BOT_MARKERS)
+    tokens = value.replace("@", " ").replace("+", " ").replace(".", " ")
+    tokens = tokens.replace("_", " ").replace("-", " ").split()
+    return bool({"bot", "agent", "assistant"} & set(tokens)) or any(
+        marker in value for marker in BOT_MARKERS
+    )
 
 
 def genuine_automation(item, allow_auto):
@@ -223,6 +227,7 @@ def self_test():
         False,
     )
     check(empty, [item("Copilot", "bot@example.org", "copilot[bot]", "Bot")], True)
+    check(empty, [item("Release Bot", "release@example.org", "release-bot", "User")], True)
     check(empty, [item("GitHub", "noreply@github.com", "web-flow", "User")], True)
     check(
         empty,
