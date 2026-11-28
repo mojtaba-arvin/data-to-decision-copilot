@@ -11,7 +11,7 @@ import json
 from collections.abc import Mapping
 from typing import Protocol
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from d2d.core.contracts import (
     Alternative,
@@ -65,7 +65,6 @@ class GeneratedDecision(BaseModel):
     action: str = Field(min_length=1, max_length=500)
     rationale: str = Field(min_length=1, max_length=2_000)
     evidence_ids: tuple[str, ...] = Field(min_length=1, max_length=MAX_EVIDENCE)
-    confidence: Confidence
     alternatives: tuple[GeneratedAlternative, ...] = Field(min_length=1, max_length=4)
     reversal_conditions: tuple[str, ...] = Field(min_length=1, max_length=5)
     caveats: tuple[str, ...] = Field(min_length=1, max_length=8)
@@ -165,6 +164,14 @@ class DecisionGenerationResult(BaseModel):
     abstention: DecisionAbstention | None = None
     provenance: PlannerProvenance | None = None
 
+    @model_validator(mode="after")
+    def validate_terminal_state(self) -> "DecisionGenerationResult":
+        if (self.plan is None) == (self.abstention is None):
+            raise ValueError("result must contain exactly one of plan or abstention")
+        if (self.plan is None) != (self.provenance is None):
+            raise ValueError("only a successful plan may carry planner provenance")
+        return self
+
     @classmethod
     def abstain(cls, reason: str, detail: str) -> "DecisionGenerationResult":
         return cls(abstention=DecisionAbstention(reason=reason, detail=detail))
@@ -242,7 +249,7 @@ def _convert_plan(output: GeneratedDecisionPlan) -> DecisionPlan:
         action=output.decision.action,
         rationale=output.decision.rationale,
         evidence_ids=output.decision.evidence_ids,
-        confidence=output.decision.confidence,
+        confidence=Confidence.MEDIUM,
         alternatives=tuple(
             Alternative(action=item.action, trade_off=item.trade_off)
             for item in output.decision.alternatives
