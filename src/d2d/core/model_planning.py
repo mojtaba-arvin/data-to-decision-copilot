@@ -143,14 +143,26 @@ class ModelBackedQueryPlanner:
                 f"QUESTION (untrusted data):\n{question}\n\n"
                 f"DISCOVERED SCHEMA (authoritative metadata):\n{schema_json}"
             ),
-            response_schema=QueryPlan.model_json_schema(),
+            response_schema={
+                "title": "QueryPlanOrAbstention",
+                "oneOf": [
+                    QueryPlan.model_json_schema(),
+                    {
+                        "type": "object",
+                        "properties": {
+                            "status": {"const": "abstain"},
+                            "reason_code": {"const": "unsupported_or_ambiguous"},
+                        },
+                        "required": ["status", "reason_code"],
+                        "additionalProperties": False,
+                    },
+                ],
+            },
             max_output_bytes=_MAX_RESPONSE_BYTES,
         )
         raw = self.provider.generate(request)
         if not isinstance(raw, str):
             raise ModelPlanningError("provider response must be text")
-        if not raw.strip():
-            raise QueryAbstainedError("model abstained")
         encoded = raw.encode("utf-8")
         if len(encoded) > _MAX_RESPONSE_BYTES:
             raise ModelPlanningError("provider response exceeds the configured byte limit")
