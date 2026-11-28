@@ -110,10 +110,16 @@ autonomous decision generation.
     with English/Persian policy-rejection messaging (PR #86).
   - [ ] Full cross-interface abstention/invalid-input/unavailable-model matrix
     and live browser-to-service deployment drill remain open.
+    - [ ] PR #99 adds an explicit structured abstention sentinel and aligns
+      CLI/REST/browser invalid-input, abstention, and unavailable-model states;
+      exact-head CI and deployed integration evidence are still required.
+    - [ ] A live browser-to-service deployment drill remains open.
 - [ ] Persian/English and RTL behavior are tested in the browser UI, not only
   in isolated formatting helpers.
   - [x] Chromium covers language switching, document `lang`/`dir`, query,
-    decision, trace history, and timeout states; visual/viewport review remains open (PR #77).
+    decision, trace history, and timeout states (PR #77).
+  - [ ] PR #99 adds 320–1440px viewport geometry assertions in both LTR and RTL;
+    exact-head CI and human visual review remain open.
 
 ### Runtime operations
 
