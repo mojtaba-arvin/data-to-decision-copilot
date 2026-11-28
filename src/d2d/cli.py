@@ -17,6 +17,7 @@ from threading import Thread
 from d2d.api import create_server, validate_server_config
 from d2d.application import build_service
 from d2d.core.journal_restore import backup_paired_journals, restore_paired_journals
+from d2d.core.runtime_recovery import backup_runtime, restore_runtime
 from d2d.core.sql_executor import QueryExecutionError, QueryTimeoutError, QueryWorkerError
 from d2d.demo import create_demo_catalog
 from d2d.diagnostics import inspect_storage
@@ -44,6 +45,27 @@ def _parser() -> argparse.ArgumentParser:
     restore.add_argument("--trace-archive", type=Path, required=True)
     restore.add_argument("--output", type=Path, required=True)
 
+    recovery = subparsers.add_parser(
+        "recovery", help="Create or restore a verified full runtime recovery bundle"
+    )
+    recovery_subparsers = recovery.add_subparsers(dest="recovery_action", required=True)
+    recovery_backup = recovery_subparsers.add_parser(
+        "backup", help="Back up the stopped runtime's catalog and three SQLite databases"
+    )
+    recovery_backup.add_argument("--catalog", type=Path, required=True)
+    recovery_backup.add_argument("--evidence-db", type=Path, required=True)
+    recovery_backup.add_argument("--trace-db", type=Path, required=True)
+    recovery_backup.add_argument("--history-db", type=Path, required=True)
+    recovery_backup.add_argument("--output", type=Path, required=True)
+    recovery_backup.add_argument("--provider", choices=("rules", "ollama"), default="rules")
+    recovery_backup.add_argument("--model", default="qwen3:8b")
+    recovery_backup.add_argument("--history-max-records", type=int)
+    recovery_restore = recovery_subparsers.add_parser(
+        "restore", help="Verify and restore a full runtime bundle to a new directory"
+    )
+    recovery_restore.add_argument("--bundle", type=Path, required=True)
+    recovery_restore.add_argument("--output", type=Path, required=True)
+
     doctor = subparsers.add_parser(
         "doctor", help="Inspect free space on filesystems holding application data"
     )
@@ -65,6 +87,7 @@ def _parser() -> argparse.ArgumentParser:
         command.add_argument("--catalog", required=True, help="DuckDB catalog path")
         command.add_argument("--evidence-db", default="d2d-evidence.sqlite")
         command.add_argument("--history-db", default="d2d-history.sqlite")
+        command.add_argument("--trace-db", default="d2d-traces.sqlite")
         command.add_argument(
             "--history-max-records",
             type=int,
@@ -96,6 +119,22 @@ def _parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    if args.command == "recovery":
+        if args.recovery_action == "backup":
+            report = backup_runtime(
+                catalog=args.catalog,
+                evidence_db=args.evidence_db,
+                trace_db=args.trace_db,
+                history_db=args.history_db,
+                output=args.output,
+                provider=args.provider,
+                model=args.model,
+                history_max_records=args.history_max_records,
+            )
+        else:
+            report = restore_runtime(args.bundle, args.output)
+        print(json.dumps(asdict(report), ensure_ascii=False, indent=2))
+        return 0
     if args.command == "doctor":
         report = inspect_storage(
             {
@@ -145,6 +184,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         evidence_path=args.evidence_db,
         history_path=args.history_db,
         history_max_records=args.history_max_records,
+        trace_path=args.trace_db,
         provider=args.provider,
         model=args.model,
         isolated_worker=args.isolated_worker,
