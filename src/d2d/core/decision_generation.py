@@ -38,6 +38,8 @@ MAX_CONTEXT_BYTES = 24_000
 MAX_PROMPT_BYTES = 32_000
 MAX_OUTPUT_BYTES = 32_000
 DEFAULT_TIMEOUT_SECONDS = 20.0
+# Keep hard-closed until Issue #31 has a measured, independently reviewed release profile.
+SEMANTIC_VERIFICATION_RELEASE_GATE_OPEN = False
 
 
 class DecisionGenerationRequest(BaseModel):
@@ -335,7 +337,11 @@ class ModelBackedDecisionPlanner:
             return DecisionGenerationResult.abstain(
                 "autonomous_generation_disabled", "Autonomous decision generation is disabled."
             )
-        if self._verifier is None or not self._verifier.identity.release_eligible:
+        if (
+            not SEMANTIC_VERIFICATION_RELEASE_GATE_OPEN
+            or self._verifier is None
+            or not self._verifier.identity.release_eligible
+        ):
             return DecisionGenerationResult.abstain(
                 "semantic_gate_not_release_eligible",
                 "Persian/English semantic verification has no measured release-eligible profile.",
