@@ -8,6 +8,11 @@ permissions:
   contents: read
   pull-requests: read
 
+# Superseded synchronize/metadata events for one PR do not need parallel validators.
+concurrency:
+  group: d2d-commit-identity-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   commit-identity:
     name: Commit identity
