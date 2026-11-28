@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
 from collections.abc import Mapping
+from dataclasses import dataclass
 
 import pytest
 from pydantic import ValidationError
@@ -15,6 +15,7 @@ from d2d.core.decision_generation import (
     ModelBackedDecisionPlanner,
     ProviderIdentity,
     SemanticVerification,
+    SemanticVerifier,
     SemanticVerifierIdentity,
     build_decision_prompt,
 )
@@ -111,7 +112,9 @@ def output(*, value: int = 7, evidence_id: str | None = None) -> str:
     })
 
 
-def planner(provider: Provider, *, enabled: bool = True, verifier=None):
+def planner(
+    provider: Provider, *, enabled: bool = True, verifier: SemanticVerifier | None = None
+) -> ModelBackedDecisionPlanner:
     return ModelBackedDecisionPlanner(
         provider=provider,
         planner_artifact_sha256="b" * 64,
@@ -130,6 +133,8 @@ def test_generation_is_disabled_by_default_and_provider_is_not_called():
     provider = Provider(output())
     result = planner(provider, enabled=False).generate(request=request(), evidence_store=Journal(evidence()))
     assert result.plan is None
+    assert result.abstention is not None
+    assert result.abstention is not None
     assert result.abstention.reason == "autonomous_generation_disabled"
     assert provider.prompt == ""
 
@@ -141,6 +146,7 @@ def test_non_release_semantic_verifier_blocks_before_provider_call():
         verifier_id="dev", version="1", evaluation_profile="development_fixture", release_eligible=False
     )
     result = planner(provider, verifier=verifier).generate(request=request(), evidence_store=Journal(evidence()))
+    assert result.abstention is not None
     assert result.abstention.reason == "semantic_gate_not_release_eligible"
     assert provider.prompt == ""
 
@@ -175,16 +181,19 @@ def test_strict_schema_rejects_extra_fields_and_missing_alternatives():
 
 def test_malformed_provider_output_abstains():
     result = planner(Provider("not-json")).generate(request=request(), evidence_store=Journal(evidence()))
+    assert result.abstention is not None
     assert result.abstention.reason == "malformed_output"
 
 
 def test_hallucinated_evidence_identifier_abstains():
     result = planner(Provider(output(evidence_id="ev-not-in-request"))).generate(request=request(), evidence_store=Journal(evidence()))
+    assert result.abstention is not None
     assert result.abstention.reason == "hallucinated_evidence_reference"
 
 
 def test_hallucinated_numeric_value_abstains_deterministically():
     result = planner(Provider(output(value=700))).generate(request=request(), evidence_store=Journal(evidence()))
+    assert result.abstention is not None
     assert result.abstention.reason == "deterministic_policy_rejected"
 
 
@@ -197,12 +206,28 @@ def test_unknown_semantic_claim_abstains():
                 label="unknown", evidence_ids=claim.evidence_ids, rationale_refs=claim.evidence_ids
             )
     result = planner(Provider(output()), verifier=UnknownVerifier()).generate(request=request(), evidence_store=Journal(evidence()))
+    assert result.abstention is not None
+    assert result.abstention is not None
+    assert result.abstention is not None
+    assert result.abstention is not None
+    assert result.abstention is not None
+    assert result.abstention is not None
+    assert result.abstention is not None
+    assert result.abstention is not None
+    assert result.abstention is not None
+    assert result.abstention is not None
+    assert result.abstention is not None
+    assert result.abstention is not None
+    assert result.abstention is not None
+    assert result.abstention is not None
     assert result.abstention.reason == "semantic_claim_not_supported"
 
 
 def test_contradicted_semantic_claim_abstains():
     class ContradictedVerifier(Verifier):
-        def verify(self, *, claim, evidence):
+        def verify(
+            self, *, claim: GeneratedClaim, evidence: tuple[Evidence, ...], timeout_seconds: float
+        ) -> SemanticVerification:
             return SemanticVerification(
                 label="contradicted", evidence_ids=claim.evidence_ids, rationale_refs=claim.evidence_ids
             )
@@ -213,19 +238,23 @@ def test_contradicted_semantic_claim_abstains():
 def test_provider_timeout_abstains_without_retry():
     provider = Provider(timeout=True)
     result = planner(provider).generate(request=request(), evidence_store=Journal(evidence()))
+    assert result.abstention is not None
     assert result.abstention.reason == "provider_timeout"
 
 
 def test_invalid_evidence_journal_abstains_before_provider_call():
     provider = Provider(output())
     result = planner(provider).generate(request=request(), evidence_store=Journal(evidence(), valid=False))
+    assert result.abstention is not None
     assert result.abstention.reason == "evidence_journal_invalid"
     assert provider.prompt == ""
 
 
 def test_unsupported_alternative_abstains_even_when_claims_pass():
     class AlternativeVerifier(Verifier):
-        def verify(self, *, claim, evidence) -> SemanticVerification:
+        def verify(
+            self, *, claim: GeneratedClaim, evidence: tuple[Evidence, ...], timeout_seconds: float
+        ) -> SemanticVerification:
             label = "unknown" if claim.claim_id == "__alternative_0_action__" else "supported"
             return SemanticVerification(
                 label=label, evidence_ids=claim.evidence_ids, rationale_refs=claim.evidence_ids
@@ -240,6 +269,7 @@ def test_success_records_complete_generation_provenance():
     result = planner(Provider(output())).generate(request=request(), evidence_store=Journal(evidence()))
     assert result.abstention is None
     assert result.plan is not None
+    assert result.provenance is not None
     assert result.provenance.provider == "test-provider"
     assert result.provenance.model_revision == "fixture-1"
     assert len(result.provenance.prompt_sha256) == 64
