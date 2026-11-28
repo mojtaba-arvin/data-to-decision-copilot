@@ -136,7 +136,7 @@ class ModelBackedQueryPlanner:
                 "aggregates, every selected non-aggregate column must appear in GROUP BY. "
                 "If the request is unsupported or ambiguous, return exactly this "
                 "JSON object and no other keys: "
-                "{\\"status\\":\\"abstain\\",\\"reason_code\\":\\"unsupported_or_ambiguous\\"}. "
+                '{"status":"abstain","reason_code":"unsupported_or_ambiguous"}. '
                 "Never return an empty response to represent abstention."
             ),
             user_prompt=(
