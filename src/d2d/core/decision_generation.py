@@ -149,7 +149,7 @@ class SemanticVerifier(Protocol):
     def identity(self) -> SemanticVerifierIdentity: ...
 
     def verify(
-        self, *, claim: GeneratedClaim, evidence: tuple[Evidence, ...]
+        self, *, claim: GeneratedClaim, evidence: tuple[Evidence, ...], timeout_seconds: float
     ) -> SemanticVerification: ...
 
 
@@ -374,7 +374,9 @@ class ModelBackedDecisionPlanner:
                     evidence_ids=generated.decision.evidence_ids, kind="inference",
                 ))
             for claim in semantic_claims:
-                verification = self._verifier.verify(claim=claim, evidence=evidence)
+                verification = self._verifier.verify(
+                    claim=claim, evidence=evidence, timeout_seconds=self._timeout
+                )
                 if verification.label != "supported":
                     return DecisionGenerationResult.abstain(
                         "semantic_claim_not_supported",
