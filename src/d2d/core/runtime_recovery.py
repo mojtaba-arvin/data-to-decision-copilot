@@ -222,6 +222,9 @@ def backup_runtime(
         paths = {role: staged / name for role, name in ARTIFACTS.items()}
         _copy_durable(sources["catalog"], paths["catalog"])
 
+        _sqlite_integrity(sources["evidence"])
+        _sqlite_integrity(sources["decision_trace"])
+        _sqlite_integrity(sources["query_history"])
         _validate_source_database(
             sources["evidence"], journal_kind="evidence",
             schema_version=EVIDENCE_SCHEMA_VERSION,
@@ -322,7 +325,7 @@ def _load_manifest(bundle: Path) -> dict[str, Any]:
         raise ValueError("unsupported recovery bundle format version")
     if manifest["manifest_sha256"] != _manifest_digest(manifest):
         raise ValueError("recovery manifest digest mismatch")
-    if set(manifest["artifacts"]) != set(ARTIFACTS):
+    if not isinstance(manifest["artifacts"], dict) or set(manifest["artifacts"]) != set(ARTIFACTS):
         raise ValueError("recovery manifest artifact roles are invalid")
     expected_names = {MANIFEST_NAME, *ARTIFACTS.values()}
     actual_names = {item.name for item in bundle.iterdir()}
@@ -345,6 +348,35 @@ def _load_manifest(bundle: Path) -> dict[str, Any]:
         "query_history": HISTORY_SCHEMA_VERSION,
     }:
         raise ValueError("unsupported recovery database schema version")
+    heads = manifest["journal_heads"]
+    if not isinstance(heads, dict) or set(heads) != {
+        "evidence", "decision_trace", "query_history"
+    }:
+        raise ValueError("invalid journal-head manifest")
+    if (
+        not isinstance(heads["evidence"], dict)
+        or set(heads["evidence"]) != {"records", "head_sha256"}
+        or not isinstance(heads["decision_trace"], dict)
+        or set(heads["decision_trace"]) != {"records", "head_sha256", "evidence_checked"}
+        or not isinstance(heads["query_history"], dict)
+        or set(heads["query_history"]) != {"records"}
+    ):
+        raise ValueError("invalid journal-head manifest")
+    for item in (heads["evidence"], heads["decision_trace"], heads["query_history"]):
+        if not isinstance(item["records"], int) or isinstance(item["records"], bool) or item["records"] < 0:
+            raise ValueError("invalid journal record count in manifest")
+    for item in (heads["evidence"], heads["decision_trace"]):
+        digest = item["head_sha256"]
+        if not isinstance(digest, str) or len(digest) != 64 or any(
+            char not in "0123456789abcdef" for char in digest
+        ):
+            raise ValueError("invalid journal head digest in manifest")
+    if (
+        not isinstance(heads["decision_trace"]["evidence_checked"], int)
+        or isinstance(heads["decision_trace"]["evidence_checked"], bool)
+        or heads["decision_trace"]["evidence_checked"] < 0
+    ):
+        raise ValueError("invalid trace/evidence reference count in manifest")
     runtime = manifest["runtime"]
     if not isinstance(runtime, dict) or set(runtime) != {
         "provider", "model", "history_max_records"
