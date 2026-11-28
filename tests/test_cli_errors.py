@@ -9,6 +9,9 @@ import pytest
 
 from d2d.application import CopilotService
 from d2d.cli import main
+from d2d.core.model_planning import QueryAbstainedError
+from d2d.core.ollama_provider import OllamaProviderError
+from d2d.core.query_planning import QueryInputError
 from d2d.core.sql_executor import QueryExecutionError, QueryTimeoutError, QueryWorkerError
 
 
@@ -27,7 +30,10 @@ class _FailingService:
 @pytest.mark.parametrize(
     ("failure", "expected_code", "expected_exit"),
     [
+        (QueryInputError("private invalid input"), "invalid_input", 2),
+        (QueryAbstainedError("private abstention"), "query_abstained", 2),
         (ValueError("private validation detail"), "request_rejected_by_validation_or_policy", 2),
+        (OllamaProviderError("private provider endpoint detail"), "model_unavailable", 1),
         (QueryTimeoutError("private timeout detail"), "query_timeout", 1),
         (QueryWorkerError("private worker detail"), "query_worker_unavailable", 1),
         (QueryExecutionError("private execution detail"), "query_execution_failed", 1),
