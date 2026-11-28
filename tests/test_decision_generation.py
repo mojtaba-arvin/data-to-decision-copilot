@@ -5,6 +5,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 import pytest
+import d2d.core.decision_generation as decision_generation
 from pydantic import ValidationError
 
 from d2d.core.contracts import Confidence, Evidence
@@ -127,12 +128,25 @@ def planner(
     )
 
 
+@pytest.fixture
+def open_test_release_gate(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(decision_generation, "SEMANTIC_VERIFICATION_RELEASE_GATE_OPEN", True)
+
+
 def request() -> DecisionGenerationRequest:
     return DecisionGenerationRequest(
         user_goal="Reduce stockout risk",
         constraints=("Preserve cash.",),
         evidence_ids=("evidence-1",),
     )
+
+
+def test_semantic_release_gate_is_hard_closed_by_default():
+    provider = Provider(output())
+    result = planner(provider).generate(request=request(), evidence_store=Journal(evidence()))
+    assert result.abstention is not None
+    assert result.abstention.reason == "semantic_gate_not_release_eligible"
+    assert provider.prompt == ""
 
 
 def test_generation_is_disabled_by_default_and_provider_is_not_called():
@@ -150,7 +164,7 @@ def test_generation_is_disabled_by_default_and_provider_is_not_called():
     assert provider.prompt == ""
 
 
-def test_non_release_semantic_verifier_blocks_before_provider_call():
+def test_non_release_semantic_verifier_blocks_before_provider_call(open_test_release_gate: None):
     provider = Provider(output())
 
     class DevelopmentVerifier(Verifier):
@@ -194,7 +208,7 @@ def test_strict_schema_rejects_extra_fields_and_missing_alternatives():
         GeneratedDecisionPlan.model_validate(payload)
 
 
-def test_malformed_provider_output_abstains():
+def test_malformed_provider_output_abstains(open_test_release_gate: None):
     result = planner(Provider("not-json")).generate(
         request=request(), evidence_store=Journal(evidence())
     )
@@ -202,7 +216,7 @@ def test_malformed_provider_output_abstains():
     assert result.abstention.reason == "malformed_output"
 
 
-def test_duplicate_json_keys_are_rejected():
+def test_duplicate_json_keys_are_rejected(open_test_release_gate: None):
     raw = output().replace('"claims":', '"claims": [], "claims":')
     result = planner(Provider(raw)).generate(
         request=request(), evidence_store=Journal(evidence())
@@ -211,7 +225,7 @@ def test_duplicate_json_keys_are_rejected():
     assert result.abstention.reason == "malformed_output"
 
 
-def test_oversized_provider_output_abstains():
+def test_oversized_provider_output_abstains(open_test_release_gate: None):
     result = planner(Provider(" " * 32_001)).generate(
         request=request(), evidence_store=Journal(evidence())
     )
@@ -219,7 +233,7 @@ def test_oversized_provider_output_abstains():
     assert result.abstention.reason == "malformed_output"
 
 
-def test_hallucinated_evidence_identifier_abstains():
+def test_hallucinated_evidence_identifier_abstains(open_test_release_gate: None):
     result = planner(Provider(output(evidence_id="ev-not-in-request"))).generate(
         request=request(), evidence_store=Journal(evidence())
     )
@@ -227,7 +241,7 @@ def test_hallucinated_evidence_identifier_abstains():
     assert result.abstention.reason == "hallucinated_evidence_reference"
 
 
-def test_hallucinated_numeric_value_abstains_deterministically():
+def test_hallucinated_numeric_value_abstains_deterministically(open_test_release_gate: None):
     result = planner(Provider(output(value=700))).generate(
         request=request(), evidence_store=Journal(evidence())
     )
@@ -236,7 +250,7 @@ def test_hallucinated_numeric_value_abstains_deterministically():
 
 
 @pytest.mark.parametrize("label", ["unknown", "contradicted"])
-def test_non_supported_semantic_claim_abstains(label: str):
+def test_non_supported_semantic_claim_abstains(label: str, open_test_release_gate: None):
     class NonSupportingVerifier(Verifier):
         def verify(
             self, *, claim: GeneratedClaim, evidence: tuple[Evidence, ...], timeout_seconds: float
@@ -252,14 +266,14 @@ def test_non_supported_semantic_claim_abstains(label: str):
     assert result.abstention.reason == "semantic_claim_not_supported"
 
 
-def test_provider_timeout_abstains_without_retry():
+def test_provider_timeout_abstains_without_retry(open_test_release_gate: None):
     provider = Provider(timeout=True)
     result = planner(provider).generate(request=request(), evidence_store=Journal(evidence()))
     assert result.abstention is not None
     assert result.abstention.reason == "provider_timeout"
 
 
-def test_verifier_timeout_abstains():
+def test_verifier_timeout_abstains(open_test_release_gate: None):
     class TimeoutVerifier(Verifier):
         def verify(
             self, *, claim: GeneratedClaim, evidence: tuple[Evidence, ...], timeout_seconds: float
@@ -273,7 +287,7 @@ def test_verifier_timeout_abstains():
     assert result.abstention.reason == "verifier_timeout"
 
 
-def test_invalid_evidence_journal_abstains_before_provider_call():
+def test_invalid_evidence_journal_abstains_before_provider_call(open_test_release_gate: None):
     provider = Provider(output())
     result = planner(provider).generate(
         request=request(), evidence_store=Journal(evidence(), valid=False)
@@ -283,7 +297,7 @@ def test_invalid_evidence_journal_abstains_before_provider_call():
     assert provider.prompt == ""
 
 
-def test_unsupported_alternative_abstains_even_when_claims_pass():
+def test_unsupported_alternative_abstains_even_when_claims_pass(open_test_release_gate: None):
     class AlternativeVerifier(Verifier):
         def verify(
             self, *, claim: GeneratedClaim, evidence: tuple[Evidence, ...], timeout_seconds: float
@@ -300,7 +314,7 @@ def test_unsupported_alternative_abstains_even_when_claims_pass():
     assert result.abstention.reason == "semantic_claim_not_supported"
 
 
-def test_success_records_complete_generation_provenance():
+def test_success_records_complete_generation_provenance(open_test_release_gate: None):
     result = planner(Provider(output())).generate(
         request=request(), evidence_store=Journal(evidence())
     )
