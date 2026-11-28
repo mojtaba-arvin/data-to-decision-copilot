@@ -12,8 +12,8 @@ from d2d.core.evidence_store import SQLiteEvidenceStore
 from d2d.core.model_planning import (
     ModelBackedQueryPlanner,
     ModelPlanningError,
-    QueryAbstainedError,
     ModelProviderIdentity,
+    QueryAbstainedError,
     StructuredGenerationRequest,
 )
 from d2d.core.query_planning import (
