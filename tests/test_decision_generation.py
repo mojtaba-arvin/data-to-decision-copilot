@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
+from collections.abc import Mapping
 
 import pytest
 from pydantic import ValidationError
@@ -8,6 +10,7 @@ from pydantic import ValidationError
 from d2d.core.contracts import Confidence, Evidence
 from d2d.core.decision_generation import (
     DecisionGenerationRequest,
+    GeneratedClaim,
     GeneratedDecisionPlan,
     ModelBackedDecisionPlanner,
     ProviderIdentity,
@@ -32,13 +35,19 @@ def evidence(value: int = 7) -> Evidence:
     return item.model_copy(update={"evidence_id": "evidence-1"})
 
 
+@dataclass(frozen=True)
+class Verification:
+    valid: bool
+    error: str | None = None
+
+
 class Journal:
     def __init__(self, item: Evidence, *, valid: bool = True) -> None:
         self.item = item
         self.valid = valid
 
-    def verify(self) -> object:
-        return type("Verification", (), {"valid": self.valid, "error": None})()
+    def verify(self) -> Verification:
+        return Verification(valid=self.valid)
 
     def get(self, evidence_id: str) -> Evidence | None:
         return self.item if evidence_id == self.item.evidence_id else None
@@ -52,7 +61,7 @@ class Provider:
         self.timeout = timeout
         self.prompt = ""
 
-    def generate(self, *, prompt: str, response_schema: dict[str, object], timeout_seconds: float) -> str:
+    def generate(self, *, prompt: str, response_schema: Mapping[str, object], timeout_seconds: float) -> str:
         self.prompt = prompt
         assert response_schema["additionalProperties"] is False
         if self.timeout:
@@ -68,7 +77,9 @@ class Verifier:
         release_eligible=True,
     )
 
-    def verify(self, *, claim, evidence) -> SemanticVerification:
+    def verify(
+        self, *, claim: GeneratedClaim, evidence: tuple[Evidence, ...]
+    ) -> SemanticVerification:
         return SemanticVerification(
             label="supported",
             evidence_ids=claim.evidence_ids,
@@ -179,7 +190,9 @@ def test_hallucinated_numeric_value_abstains_deterministically():
 
 def test_unknown_semantic_claim_abstains():
     class UnknownVerifier(Verifier):
-        def verify(self, *, claim, evidence) -> SemanticVerification:
+        def verify(
+            self, *, claim: GeneratedClaim, evidence: tuple[Evidence, ...]
+        ) -> SemanticVerification:
             return SemanticVerification(
                 label="unknown", evidence_ids=claim.evidence_ids, rationale_refs=claim.evidence_ids
             )
