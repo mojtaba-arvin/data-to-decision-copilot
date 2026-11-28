@@ -5,6 +5,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 import pytest
+
 import d2d.core.decision_generation as decision_generation
 from pydantic import ValidationError
 
