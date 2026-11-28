@@ -165,10 +165,10 @@ separately managed external dependencies; do not claim they are included.
 - [x] A paired journal backup is restored into a fresh destination in a repeatable drill (PR #64).
 - [x] The restored evidence and decision-trace journals independently verify
   and historical trace replay succeeds against the restored evidence store (PRs #63–64).
-- [x] A full runtime recovery bundle contains the catalog and all three SQLite
+- [ ] A full runtime recovery bundle contains the catalog and all three SQLite
   databases, records a versioned integrity manifest, and restores atomically
-  into a new directory; exact-head CI is required before this implementation
-  gate is accepted.
+  into a new directory (PR #98; implementation and automated tests require
+  exact-head CI validation before acceptance).
 - [ ] A clean deployment-environment restore/re-query drill is recorded with
   deployment-specific RPO/RTO targets; off-host encryption and authenticity
   remain deployment responsibilities.
