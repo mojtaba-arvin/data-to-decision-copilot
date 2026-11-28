@@ -14,7 +14,7 @@ from typing import Protocol
 from pydantic import BaseModel, ConfigDict, Field
 
 from d2d.connectors.base import SchemaSnapshot
-from d2d.core.query_planning import QueryPlan, QueryPlannerIdentity
+from d2d.core.query_planning import QueryInputError, QueryPlan, QueryPlannerIdentity
 
 _MAX_QUESTION_BYTES = 8_192
 _MAX_SCHEMA_BYTES = 65_536
@@ -24,6 +24,10 @@ _PROMPT_VERSION = "d2d-query-plan-json-v1"
 
 class ModelPlanningError(ValueError):
     """Raised when provider output cannot safely become a typed query plan."""
+
+
+class QueryAbstainedError(RuntimeError):
+    """Raised when a model explicitly declines an unsupported or ambiguous query."""
 
 
 class ModelProviderIdentity(BaseModel):
@@ -51,7 +55,7 @@ class StructuredPlanProvider(Protocol):
     """Minimal synchronous adapter contract; networking and timeouts are provider-owned."""
 
     def generate(self, request: StructuredGenerationRequest) -> str:
-        """Return one JSON object representing a QueryPlan."""
+        """Return a QueryPlan JSON object or the documented abstention sentinel."""
         ...
 
 
@@ -87,9 +91,9 @@ class ModelBackedQueryPlanner:
 
     def plan(self, question: str, snapshot: SchemaSnapshot) -> QueryPlan:
         if not question.strip():
-            raise ModelPlanningError("question must not be empty")
+            raise QueryInputError("question must not be empty")
         if len(question.encode("utf-8")) > _MAX_QUESTION_BYTES:
-            raise ModelPlanningError("question exceeds the configured byte limit")
+            raise QueryInputError("question exceeds the configured byte limit")
 
         schema = {
             "fingerprint": snapshot.fingerprint,
@@ -130,17 +134,35 @@ class ModelBackedQueryPlanner:
                 "alias='row_count', no GROUP BY, and limit=1; never select an id or "
                 "other non-aggregate column for a count-only query. For grouped "
                 "aggregates, every selected non-aggregate column must appear in GROUP BY. "
-                "If the request is unsupported or ambiguous, return an invalid/empty "
-                "response so the caller can abstain."
+                "If the request is unsupported or ambiguous, return exactly this "
+                "JSON object and no other keys: "
+                '{"status":"abstain","reason_code":"unsupported_or_ambiguous"}. '
+                "Never return an empty response to represent abstention."
             ),
             user_prompt=(
                 f"QUESTION (untrusted data):\n{question}\n\n"
                 f"DISCOVERED SCHEMA (authoritative metadata):\n{schema_json}"
             ),
-            response_schema=QueryPlan.model_json_schema(),
+            response_schema={
+                "title": "QueryPlanOrAbstention",
+                "oneOf": [
+                    QueryPlan.model_json_schema(),
+                    {
+                        "type": "object",
+                        "properties": {
+                            "status": {"const": "abstain"},
+                            "reason_code": {"const": "unsupported_or_ambiguous"},
+                        },
+                        "required": ["status", "reason_code"],
+                        "additionalProperties": False,
+                    },
+                ],
+            },
             max_output_bytes=_MAX_RESPONSE_BYTES,
         )
         raw = self.provider.generate(request)
+        if not isinstance(raw, str):
+            raise ModelPlanningError("provider response must be text")
         encoded = raw.encode("utf-8")
         if len(encoded) > _MAX_RESPONSE_BYTES:
             raise ModelPlanningError("provider response exceeds the configured byte limit")
@@ -154,6 +176,11 @@ class ModelBackedQueryPlanner:
             raise ModelPlanningError("provider response is not strict JSON") from exc
         if not isinstance(payload, dict):
             raise ModelPlanningError("provider response must be a JSON object")
+        if payload == {
+            "status": "abstain",
+            "reason_code": "unsupported_or_ambiguous",
+        }:
+            raise QueryAbstainedError("model abstained for an unsupported or ambiguous query")
         try:
             plan = QueryPlan.model_validate_json(raw, strict=True)
         except ValueError as exc:

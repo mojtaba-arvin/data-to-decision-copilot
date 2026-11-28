@@ -17,6 +17,9 @@ from threading import Thread
 from d2d.api import create_server, validate_server_config
 from d2d.application import build_service
 from d2d.core.journal_restore import backup_paired_journals, restore_paired_journals
+from d2d.core.model_planning import QueryAbstainedError
+from d2d.core.ollama_provider import OllamaProviderError
+from d2d.core.query_planning import QueryInputError
 from d2d.core.runtime_recovery import backup_runtime, restore_runtime
 from d2d.core.sql_executor import QueryExecutionError, QueryTimeoutError, QueryWorkerError
 from d2d.demo import create_demo_catalog
@@ -193,6 +196,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "query":
             try:
                 result = asyncio.run(service.query(args.question))
+            except QueryAbstainedError:
+                print(json.dumps({"error": "query_abstained"}, ensure_ascii=False))
+                return 2
+            except QueryInputError:
+                print(json.dumps({"error": "invalid_input"}, ensure_ascii=False))
+                return 2
             except ValueError:
                 print(json.dumps(
                     {"error": "request_rejected_by_validation_or_policy"},
@@ -200,7 +209,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 ))
                 return 2
             except Exception as exc:
-                if isinstance(exc, QueryTimeoutError):
+                if isinstance(exc, OllamaProviderError):
+                    code = "model_unavailable"
+                elif isinstance(exc, QueryTimeoutError):
                     code = "query_timeout"
                 elif isinstance(exc, QueryWorkerError):
                     code = "query_worker_unavailable"

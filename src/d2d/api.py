@@ -18,6 +18,9 @@ from typing import Any, cast
 from urllib.parse import unquote
 
 from d2d.application import CopilotService
+from d2d.core.model_planning import QueryAbstainedError
+from d2d.core.ollama_provider import OllamaProviderError
+from d2d.core.query_planning import QueryInputError
 from d2d.core.sql_executor import QueryExecutionError, QueryTimeoutError, QueryWorkerError
 
 _MAX_BODY_BYTES = 8_192
@@ -184,7 +187,9 @@ def create_server(
             self.wfile.write(body)
 
         def _send_request_failure(self, exc: Exception) -> None:
-            if isinstance(exc, QueryTimeoutError):
+            if isinstance(exc, OllamaProviderError):
+                status, code = 503, "model_unavailable"
+            elif isinstance(exc, QueryTimeoutError):
                 status, code = 504, "query_timeout"
             elif isinstance(exc, QueryWorkerError):
                 status, code = 503, "query_worker_unavailable"
@@ -269,32 +274,32 @@ def create_server(
                 self._send(404, {"error": "not_found"})
                 return
             if self.headers.get_content_type() != "application/json":
-                self._send(415, {"error": "content_type_must_be_application_json"})
+                self._send(415, {"error": "invalid_input"})
                 return
             try:
                 length = int(self.headers.get("Content-Length", "0"))
             except ValueError:
-                self._send(400, {"error": "invalid_content_length"})
+                self._send(400, {"error": "invalid_input"})
                 return
             if length < 1 or length > _MAX_BODY_BYTES:
-                self._send(413, {"error": "request_body_out_of_bounds"})
+                self._send(413, {"error": "invalid_input"})
                 return
             try:
                 decoded: object = json.loads(self.rfile.read(length))
             except (UnicodeDecodeError, json.JSONDecodeError):
-                self._send(400, {"error": "invalid_json"})
+                self._send(400, {"error": "invalid_input"})
                 return
             if not isinstance(decoded, dict):
-                self._send(400, {"error": "request_body_must_be_an_object"})
+                self._send(400, {"error": "invalid_input"})
                 return
             payload = cast(dict[str, object], decoded)
             question_value = payload.get("question")
             if not isinstance(question_value, str):
-                self._send(400, {"error": "question_must_be_a_string"})
+                self._send(400, {"error": "invalid_input"})
                 return
             question = question_value
             if not question.strip() or len(question.encode("utf-8")) > _MAX_BODY_BYTES:
-                self._send(400, {"error": "question_empty_or_too_large"})
+                self._send(400, {"error": "invalid_input"})
                 return
             if not query_slots.acquire(blocking=False):
                 self._send(503, {"error": "server_busy"})
@@ -313,7 +318,7 @@ def create_server(
                             or not isinstance(claims, list)
                             or not all(isinstance(item, dict) for item in cast(list[object], claims))
                         ):
-                            self._send(400, {"error": "invalid_decision_proposal_shape"})
+                            self._send(400, {"error": "invalid_input"})
                             return
                         self._send(201, service.decide(
                             question=question,
@@ -321,6 +326,10 @@ def create_server(
                             decision=cast(dict[str, object], decision),
                             claims=cast(list[dict[str, object]], claims),
                         ))
+                except QueryAbstainedError:
+                    self._send(422, {"error": "query_abstained"})
+                except QueryInputError:
+                    self._send(400, {"error": "invalid_input"})
                 except ValueError:
                     self._send(422, {"error": "request_rejected_by_validation_or_policy"})
                 except Exception as exc:

@@ -81,10 +81,13 @@ The CLI query command always emits JSON. Successful queries exit with status
 `0`; validation or policy rejection exits with status `2`; execution and
 infrastructure failures exit with status `1` and a stable, redacted
 `{"error":"..."}` code. Error output never includes exception text, which may
-contain local paths or sensitive provider details. The CLI currently classifies
-query timeouts, worker failures, SQL execution failures, SQLite contention,
-storage failures, and unexpected failures. This is not yet full parity for
-model-unavailable and abstention states across every interface.
+contain local paths or sensitive provider details. The CLI and REST expose
+stable states for invalid input, explicit model abstention, unavailable local
+models, query timeouts, worker failures, SQL execution failures, SQLite
+contention, storage failures, and unexpected failures. The browser maps the
+same query states to English and Persian operator messages. A model abstention
+is an explicit structured sentinel, not an empty or malformed provider response.
+This contract does not claim semantic correctness or general model quality.
 
 
 Before starting or during operation, inspect the filesystems that hold the catalog and
