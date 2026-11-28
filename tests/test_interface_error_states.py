@@ -9,8 +9,13 @@ from urllib.request import Request, urlopen
 
 import pytest
 
-from d2d.application import build_service
-from d2d.core.model_planning import ModelBackedQueryPlanner, QueryAbstainedError
+from d2d.application import CopilotService, build_service
+from d2d.connectors.base import SchemaSnapshot
+from d2d.core.model_planning import (
+    ModelBackedQueryPlanner,
+    QueryAbstainedError,
+    StructuredGenerationRequest,
+)
 from d2d.core.ollama_provider import OllamaProviderError, OllamaStructuredPlanProvider
 from d2d.demo import create_demo_catalog
 from d2d.api import create_server
@@ -31,14 +36,14 @@ def _request(server: ThreadingHTTPServer, question: object) -> tuple[int, dict[s
         return error.code, json.loads(error.read())
 
 
-def _serve(service: object) -> tuple[ThreadingHTTPServer, threading.Thread]:
-    server = create_server(service, port=0)  # type: ignore[arg-type]
+def _serve(service: CopilotService) -> tuple[ThreadingHTTPServer, threading.Thread]:
+    server = create_server(service, port=0)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     return server, thread
 
 
-def _service(tmp_path: Path, *, provider: str = "rules"):
+def _service(tmp_path: Path, *, provider: str = "rules") -> CopilotService:
     catalog = tmp_path / "catalog.duckdb"
     create_demo_catalog(catalog)
     return build_service(
@@ -65,7 +70,9 @@ def test_rest_reports_invalid_input_with_stable_code(tmp_path: Path) -> None:
 
 
 def test_rest_reports_explicit_model_abstention(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    def abstain(self: ModelBackedQueryPlanner, question: str, snapshot: object):
+    def abstain(
+        self: ModelBackedQueryPlanner, question: str, snapshot: SchemaSnapshot
+    ) -> object:
         raise QueryAbstainedError("private model reasoning")
 
     monkeypatch.setattr(ModelBackedQueryPlanner, "plan", abstain)
@@ -87,7 +94,9 @@ def test_rest_reports_unavailable_model_without_leaking_provider_detail(
     caplog: pytest.LogCaptureFixture,
     tmp_path: Path,
 ) -> None:
-    def unavailable(self: OllamaStructuredPlanProvider, request: object) -> str:
+    def unavailable(
+        self: OllamaStructuredPlanProvider, request: StructuredGenerationRequest
+    ) -> str:
         raise OllamaProviderError("private endpoint and model details")
 
     monkeypatch.setattr(OllamaStructuredPlanProvider, "generate", unavailable)
