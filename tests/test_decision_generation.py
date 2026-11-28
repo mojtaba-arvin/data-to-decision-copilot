@@ -78,7 +78,7 @@ class Verifier:
     )
 
     def verify(
-        self, *, claim: GeneratedClaim, evidence: tuple[Evidence, ...]
+        self, *, claim: GeneratedClaim, evidence: tuple[Evidence, ...], timeout_seconds: float
     ) -> SemanticVerification:
         return SemanticVerification(
             label="supported",
@@ -191,7 +191,7 @@ def test_hallucinated_numeric_value_abstains_deterministically():
 def test_unknown_semantic_claim_abstains():
     class UnknownVerifier(Verifier):
         def verify(
-            self, *, claim: GeneratedClaim, evidence: tuple[Evidence, ...]
+            self, *, claim: GeneratedClaim, evidence: tuple[Evidence, ...], timeout_seconds: float
         ) -> SemanticVerification:
             return SemanticVerification(
                 label="unknown", evidence_ids=claim.evidence_ids, rationale_refs=claim.evidence_ids
