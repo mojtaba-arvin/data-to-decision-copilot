@@ -26,7 +26,7 @@ fields can grant tools or expand the context boundary.
 The provider returns one JSON object matching the strict, closed
 `GeneratedDecisionPlan` schema:
 
-- one decision with action, rationale, evidence IDs, confidence, 1–4
+- one decision with action, rationale, evidence IDs, 1–4
   alternatives with trade-offs, 1–5 reversal conditions, and 1–8 caveats;
 - 1–16 uniquely identified claims, each with a statement, claim kind, and
   one or more evidence IDs;
@@ -42,7 +42,7 @@ verifier declares a release-eligible profile. The shipped code does not provide
 such a verifier. A test double can exercise the interface but is not evidence
 of calibration or release readiness.
 
-Every claim must be semantically `supported` against its exact evidence
+The model does not provide a confidence score; the compatibility adapter assigns only conservative `medium` confidence and does not treat it as calibrated. Every claim must be semantically `supported` against its exact evidence
 references. `contradicted`, `unknown`, verifier timeout/failure, malformed
 JSON, oversized output/context, hallucinated evidence IDs, numeric values absent
 from evidence, truncated evidence, and deterministic policy violations all
