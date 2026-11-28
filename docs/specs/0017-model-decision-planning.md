@@ -37,8 +37,10 @@ provider timeout are bounded in code. The adapter performs no retries.
 
 ## Verification and abstention
 
-Generation is denied unless explicitly enabled and the configured semantic
-verifier declares a release-eligible profile. The shipped code does not provide
+Generation is denied unless explicitly enabled, the application-owned hard
+release-gate constant is opened, and the configured semantic verifier declares a
+release-eligible profile. The shipped hard-gate constant is false; a provider or
+runtime configuration cannot override it. The shipped code does not provide
 such a verifier. A test double can exercise the interface but is not evidence
 of calibration or release readiness.
 
