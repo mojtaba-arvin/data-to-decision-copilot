@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import pytest
 from pydantic import ValidationError
 
-from d2d.core.contracts import Confidence, Evidence
+from d2d.core.contracts import Evidence
 from d2d.core.decision_generation import (
     DecisionGenerationRequest,
     GeneratedClaim,
@@ -98,7 +98,6 @@ def output(*, value: int = 7, evidence_id: str = "evidence-1") -> str:
             "action": "Review replenishment",
             "rationale": f"Observed stock level is {value} units.",
             "evidence_ids": [evidence_id],
-            "confidence": Confidence.MEDIUM.value,
             "alternatives": [{
                 "action": "Defer review",
                 "trade_off": "Reduces immediate effort but delays response.",
