@@ -79,6 +79,9 @@ const translations = {
     truncated: 'Result is truncated by configured limits.', queryTimeout: 'Query timed out. Reduce the query scope or retry later.',
     workerUnavailable: 'Query worker is unavailable. Check the service process and retry.',
     storageBusy: 'Storage is busy. Wait briefly and retry.', storageUnavailable: 'Storage is unavailable or full. Check disk space and database permissions.',
+    invalidInput: 'Enter a non-empty question and check the request format and size.',
+    queryAbstained: 'The model abstained because the request is unsupported or ambiguous. Refine the question and try again.',
+    modelUnavailable: 'The configured model is unavailable. Check Ollama and the exact configured model tag.',
     queryRejected: 'The query was rejected by validation or safety policy. Check the question and try a supported request.',
     queryExecutionFailed: 'The query could not be executed against the catalog. Check the query scope and catalog state.',
     serverBusy: 'The service is handling its current workload. Wait briefly and retry.',
@@ -109,6 +112,9 @@ const translations = {
     workerUnavailable: 'پردازشگر پرس‌وجو در دسترس نیست. وضعیت سرویس را بررسی و دوباره تلاش کنید.',
     storageBusy: 'پایگاه داده مشغول است. کمی صبر کنید و دوباره تلاش کنید.',
     storageUnavailable: 'ذخیره‌سازی در دسترس نیست یا فضای دیسک کافی نیست. فضا و مجوزهای پایگاه داده را بررسی کنید.',
+    invalidInput: 'سؤال باید خالی نباشد و قالب و اندازه درخواست معتبر باشد.',
+    queryAbstained: 'مدل به‌دلیل پشتیبانی‌نشدن یا ابهام درخواست از پاسخ‌گویی خودداری کرد. سؤال را دقیق‌تر کنید و دوباره بفرستید.',
+    modelUnavailable: 'مدل پیکربندی‌شده در دسترس نیست. وضعیت Ollama و برچسب دقیق مدل را بررسی کنید.',
     queryRejected: 'پرس‌وجو توسط اعتبارسنجی یا سیاست ایمنی رد شد. سؤال را بررسی کنید و درخواست پشتیبانی‌شده‌ای بفرستید.',
     queryExecutionFailed: 'اجرای پرس‌وجو روی کاتالوگ ناموفق بود. دامنه پرس‌وجو و وضعیت کاتالوگ را بررسی کنید.',
     serverBusy: 'سرویس مشغول پردازش درخواست‌های فعلی است. کمی صبر کنید و دوباره تلاش کنید.',
@@ -244,6 +250,9 @@ $('query-form').addEventListener('submit', async (event) => {
   } catch (error) {
     const code = error.message;
     messageKey = ({
+      invalid_input: 'invalidInput',
+      query_abstained: 'queryAbstained',
+      model_unavailable: 'modelUnavailable',
       query_timeout: 'queryTimeout',
       query_worker_unavailable: 'workerUnavailable',
       storage_busy: 'storageBusy',
