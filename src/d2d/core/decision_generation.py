@@ -273,6 +273,10 @@ def _reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]
     return result
 
 
+def _reject_nonfinite_constant(value: str) -> None:
+    raise ValueError(f"non-finite JSON constant: {value}")
+
+
 def _convert_plan(output: GeneratedDecisionPlan) -> DecisionPlan:
     decision = Decision(
         action=output.decision.action,
@@ -348,7 +352,12 @@ class ModelBackedDecisionPlanner:
                 return DecisionGenerationResult.abstain(
                     "evidence_journal_invalid", "Evidence journal verification failed."
                 )
-            resolved = tuple(evidence_store.get(item) for item in request.evidence_ids)
+            try:
+                resolved = tuple(evidence_store.get(item) for item in request.evidence_ids)
+            except Exception:
+                return DecisionGenerationResult.abstain(
+                    "evidence_unavailable", "Requested journal evidence could not be resolved."
+                )
             if any(item is None for item in resolved):
                 return DecisionGenerationResult.abstain(
                     "evidence_unavailable", "One or more requested evidence records are unavailable."
@@ -376,7 +385,7 @@ class ModelBackedDecisionPlanner:
             parsed = json.loads(
                 raw,
                 object_pairs_hook=_reject_duplicate_keys,
-                parse_constant=lambda value: (_ for _ in ()).throw(ValueError(value)),
+                parse_constant=_reject_nonfinite_constant,
             )
             generated = GeneratedDecisionPlan.model_validate(parsed)
         except (json.JSONDecodeError, ValidationError, ValueError, TypeError):
