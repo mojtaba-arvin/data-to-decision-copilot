@@ -6,6 +6,7 @@ release yet; entries remain under Unreleased until a tagged release is created.
 ## Unreleased
 
 ### Added
+- An isolated, disabled-by-default provider-neutral DecisionPlan generation contract with journal-verified bounded evidence, strict JSON schemas, semantic verification hooks, deterministic abstention, provenance, and a hard-closed Issue #31 release gate; production activation remains blocked on Issue #31.
 - Typed evidence, decision, and trace contracts with deterministic policy checks.
 - Read-only DuckDB discovery and bounded analytical execution.
 - Explicit CSV/Parquet sources with bounded no-follow input snapshots and schema-drift checks.
