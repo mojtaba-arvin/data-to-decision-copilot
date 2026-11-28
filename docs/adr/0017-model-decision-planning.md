@@ -8,7 +8,9 @@ Accepted as an engineering boundary; runtime activation deferred to Issue #31.
 
 Define a provider-independent structured DecisionPlan generation protocol,
 strict bounded output schema, bounded evidence projection resolved only after
-journal verification, deterministic abstention behavior, and explicit provenance. Keep the implementation isolated
+journal verification, deterministic abstention behavior, and explicit provenance.
+The model does not supply a confidence score; the compatibility adapter assigns
+only a conservative medium label and makes no calibration claim. Keep the implementation isolated
 from the default query/decision runtime. Generation is disabled by default and
 cannot proceed without an explicitly configured release-eligible semantic
 verifier.
