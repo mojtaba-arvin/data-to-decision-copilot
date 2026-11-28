@@ -198,6 +198,23 @@ def test_malformed_provider_output_abstains():
     assert result.abstention.reason == "malformed_output"
 
 
+def test_duplicate_json_keys_are_rejected():
+    raw = output().replace('"claims":', '"claims": [], "claims":')
+    result = planner(Provider(raw)).generate(
+        request=request(), evidence_store=Journal(evidence())
+    )
+    assert result.abstention is not None
+    assert result.abstention.reason == "malformed_output"
+
+
+def test_oversized_provider_output_abstains():
+    result = planner(Provider(" " * 32_001)).generate(
+        request=request(), evidence_store=Journal(evidence())
+    )
+    assert result.abstention is not None
+    assert result.abstention.reason == "malformed_output"
+
+
 def test_hallucinated_evidence_identifier_abstains():
     result = planner(Provider(output(evidence_id="ev-not-in-request"))).generate(
         request=request(), evidence_store=Journal(evidence())
