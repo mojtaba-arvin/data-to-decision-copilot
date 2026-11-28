@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import pytest
 from pydantic import ValidationError
 
-from d2d.core.contracts import Evidence
+from d2d.core.contracts import Confidence, Evidence
 from d2d.core.decision_generation import (
     DecisionGenerationRequest,
     GeneratedClaim,
@@ -285,6 +285,7 @@ def test_success_records_complete_generation_provenance():
     )
     assert result.abstention is None
     assert result.plan is not None
+    assert result.plan.decision.confidence is Confidence.MEDIUM
     assert result.provenance is not None
     assert result.provenance.provider == "test-provider"
     assert result.provenance.model_revision == "fixture-1"
