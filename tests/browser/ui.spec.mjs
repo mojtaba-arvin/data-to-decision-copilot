@@ -29,6 +29,9 @@ await page.route("**/v1/traces", (route) =>
 await page.route("**/v1/query", async (route) => {
   const failures = {
     timeout: { status: 504, error: "query_timeout" },
+    invalid: { status: 400, error: "invalid_input" },
+    abstained: { status: 422, error: "query_abstained" },
+    model: { status: 503, error: "model_unavailable" },
     rejected: { status: 422, error: "request_rejected_by_validation_or_policy" },
     execution: { status: 422, error: "query_execution_failed" },
     busy: { status: 503, error: "server_busy" },
@@ -129,7 +132,59 @@ try {
   queryMode = "failed";
   await page.getByRole("button", { name: "Run query" }).click();
   await page.getByText("The service could not complete the request. Check service health and operator logs.").waitFor();
-  console.log("Browser UI checks passed: bilingual RTL, query, decision, timeout, rejection, execution, busy, and generic failure states.");
+
+  queryMode = "invalid";
+  await page.getByRole("button", { name: "Run query" }).click();
+  await page.getByText("Enter a non-empty question and check the request format and size.").waitFor();
+  queryMode = "abstained";
+  await page.getByRole("button", { name: "Run query" }).click();
+  await page.getByText("The model abstained because the request is unsupported or ambiguous. Refine the question and try again.").waitFor();
+  queryMode = "model";
+  await page.getByRole("button", { name: "Run query" }).click();
+  await page.getByText("The configured model is unavailable. Check Ollama and the exact configured model tag.").waitFor();
+
+  await page.getByRole("button", { name: "Switch to Persian" }).click();
+  queryMode = "invalid";
+  await page.getByRole("button", { name: "اجرای پرس‌وجو" }).click();
+  await page.getByText("سؤال باید خالی نباشد و قالب و اندازه درخواست معتبر باشد.").waitFor();
+  queryMode = "abstained";
+  await page.getByRole("button", { name: "اجرای پرس‌وجو" }).click();
+  await page.getByText("مدل به‌دلیل پشتیبانی‌نشدن یا ابهام درخواست از پاسخ‌گویی خودداری کرد. سؤال را دقیق‌تر کنید و دوباره بفرستید.").waitFor();
+  queryMode = "model";
+  await page.getByRole("button", { name: "اجرای پرس‌وجو" }).click();
+  await page.getByText("مدل پیکربندی‌شده در دسترس نیست. وضعیت Ollama و برچسب دقیق مدل را بررسی کنید.").waitFor();
+
+  for (const width of [320, 360, 768, 1024, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const direction of ["rtl", "ltr"]) {
+      const currentDirection = await page.locator("html").getAttribute("dir");
+      if (currentDirection !== direction) {
+        await page.getByRole("button", {
+          name: direction === "rtl" ? "Switch to Persian" : "تغییر زبان به انگلیسی",
+        }).click();
+      }
+      const dimensions = await page.evaluate(() => ({
+        viewport: window.innerWidth,
+        document: document.documentElement.scrollWidth,
+        body: document.body.scrollWidth,
+      }));
+      assert.ok(
+        dimensions.document <= dimensions.viewport,
+        `document overflows at ${width}px in ${direction}: ${JSON.stringify(dimensions)}`,
+      );
+      assert.ok(
+        dimensions.body <= dimensions.viewport,
+        `body overflows at ${width}px in ${direction}: ${JSON.stringify(dimensions)}`,
+      );
+      for (const selector of ["#question", "#submit", "#language-toggle", "#status"]) {
+        const bounds = await page.locator(selector).boundingBox();
+        assert.ok(bounds, `${selector} is visible at ${width}px in ${direction}`);
+        assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= width + 1,
+          `${selector} escapes viewport at ${width}px in ${direction}`);
+      }
+    }
+  }
+  console.log("Browser UI checks passed: query, decision, bilingual RTL, failure parity, and 320–1440px viewport geometry.");
 } finally {
   await browser.close();
 }
