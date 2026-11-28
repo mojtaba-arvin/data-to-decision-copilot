@@ -44,13 +44,19 @@ quotas, and tenant isolation are implemented.
   an attacker with full database-file and process access from rewriting the
   entire journal. Higher assurance requires external anchoring or signatures
   with separately protected keys.
-- Query history is stored in a bounded local SQLite database (default maximum
-  1,000 records). It persists questions and evidence metadata, but not result rows
-  or raw SQL bind values. Questions may themselves contain sensitive information;
-  protect the history database and remove it, including SQLite WAL/SHM sidecars
-  when the service is stopped, when its retention period ends.
+- Query history is stored in a local SQLite database and persists questions and
+  evidence metadata, but not result rows or raw SQL bind values. It is retained
+  without automatic pruning by default; an explicit `--history-max-records N`
+  enables bounded retention. Questions may themselves contain sensitive
+  information; protect the history database and apply only an explicitly
+  approved retention policy.
 - Query history is not a substitute for the independently verified Evidence
   journal and DecisionTrace audit stores.
+- `d2d recovery backup` creates a local integrity-checked bundle of the
+  materialized DuckDB catalog and all three SQLite databases while the serving
+  process is stopped. It excludes source snapshots, secrets, TLS keys, host
+  configuration, and model weights. The bundle is not encrypted, signed, or
+  automatically copied off-host; deployment operators must protect it.
 - Evidence and DecisionTrace journals are append-only and currently have no
   automatic pruning/compaction policy. Monitor disk growth and plan verified
   archival/rotation before long-running or high-volume deployments; do not delete
