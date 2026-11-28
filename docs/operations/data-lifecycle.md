@@ -2,11 +2,14 @@
 
 ## Scope
 
-The current operator backup command covers exactly two append-only SQLite
-journals: Evidence and DecisionTrace. It does **not** back up the DuckDB
-catalog, original CSV/Parquet/source files, query-history database, application
-configuration, deployment secrets, or Ollama model artifacts. A successful
-paired-journal backup must never be described as a complete application backup.
+The operator has two distinct recovery workflows. `d2d journal backup`
+covers exactly the Evidence and DecisionTrace journals. The newer
+`d2d recovery backup` workflow covers the materialized DuckDB catalog and all
+three SQLite databases (Evidence, DecisionTrace, and query history), with a
+versioned integrity manifest. Neither workflow includes original
+CSV/Parquet/source files, deployment secrets, TLS keys, host configuration, or
+Ollama model artifacts. A paired-journal backup must never be described as a
+complete application backup.
 
 ## Retention defaults
 
@@ -31,11 +34,11 @@ protect each item independently:
 
 | Data or state | Current coverage | Operator responsibility |
 | --- | --- | --- |
-| Evidence journal | `d2d journal backup` | Run and verify paired backup |
-| DecisionTrace journal | `d2d journal backup` | Run and verify paired backup |
-| DuckDB catalog | Not included | Snapshot and retain separately |
+| Evidence journal | `d2d recovery backup` (or paired journal backup) | Verify bundle and journal chain |
+| DecisionTrace journal | `d2d recovery backup` (or paired journal backup) | Verify bundle, chain, and evidence references |
+| DuckDB catalog | `d2d recovery backup` | Stop service; verify catalog fingerprint |
+| Query-history SQLite database | `d2d recovery backup` | Verify SQLite integrity and schema |
 | Original source files / object-store inputs | Not included | Retain immutable/versioned source snapshots |
-| Query-history SQLite database | Not included | Back up separately or explicitly accept its loss |
 | Configuration and deployment metadata | Not included | Version non-secret configuration |
 | Secrets and TLS private keys | Not included | Back up/rotate through a secret manager; never commit them |
 | Ollama model files and runtime | Not included | Re-provision and verify the exact model independently |
@@ -54,12 +57,16 @@ recovery point must align all of these artifacts, quiesce writes and coordinate
 the snapshots at the deployment layer, recording the selected catalog/source
 version and backup timestamps.
 
-The current CLI does not provide a complete application backup or a coordinated
-full-application restore. Until that workflow exists and is tested, operators
-must not claim point-in-time application recovery. Loss of the query-history
-database may remove convenience history without invalidating the independently
-verified Evidence and DecisionTrace journals; loss of the catalog or source
-snapshot can prevent reproducing the original analytical context.
+The CLI now provides a versioned runtime recovery bundle through
+`d2d recovery backup` and `d2d recovery restore`; see the
+[full runtime recovery runbook](runtime-recovery.md). Backup requires the
+serving workload to be stopped and the operator to prevent restart until
+publication completes. The catalog is checkpointed under an exclusive DuckDB
+writer connection; all three SQLite files are independently integrity-checked.
+Restore verifies all four artifacts and publishes into a fresh directory
+without replacement. The customer-environment restore drill, RPO/RTO targets,
+off-host encryption/signing, and source/model re-provisioning remain separate
+operator/release responsibilities.
 
 ## Runtime recovery design
 
@@ -81,14 +88,13 @@ items.
 
 ## Release gate
 
-A future full-recovery milestone must provide and test:
+The remaining full-recovery acceptance work is:
 
-1. A documented inventory and versioned manifest for all required artifacts.
-2. Coordinated backup/restore procedures with explicit quiescence semantics.
-3. Integrity verification for each artifact and cross-reference validation.
-4. A fresh-environment restore drill that verifies query reproducibility where
-   the original source/model dependencies are available.
-5. Explicit RPO/RTO targets and operator-visible failure reporting.
+1. Execute a clean deployment-environment restore and re-query drill.
+2. Record deployment-specific RPO/RTO targets and operator-visible outcomes.
+3. Validate off-host encryption, access controls, and detached authenticity
+   according to the deployment's backup policy.
+4. Re-provision and verify excluded source/model dependencies independently.
 
 Do not add automatic deletion, journal rotation, or retention expiry as a
 substitute for this work. Disk pressure must produce an actionable alert and
