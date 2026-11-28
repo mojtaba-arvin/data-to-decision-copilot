@@ -20,7 +20,7 @@ from d2d.core.sql_executor import QueryResult
 
 
 def evidence(value: int = 7) -> Evidence:
-    return create_execution_evidence(
+    item = create_execution_evidence(
         sql="SELECT 7 AS value",
         dialect="duckdb",
         result=QueryResult(columns=("value",), rows=((value,),), captured_rows=1, output_bytes=8),
@@ -28,6 +28,7 @@ def evidence(value: int = 7) -> Evidence:
         schema_fingerprint="a" * 64,
         execution_ms=1.0,
     )
+    return item.model_copy(update={"evidence_id": "evidence-1"})
 
 
 class Provider:
@@ -63,8 +64,7 @@ class Verifier:
 
 
 def output(*, value: int = 7, evidence_id: str | None = None) -> str:
-    item = evidence()
-    ref = evidence_id or item.evidence_id
+    ref = evidence_id or "evidence-1"
     return json.dumps({
         "decision": {
             "action": "Review replenishment",
@@ -163,13 +163,23 @@ def test_hallucinated_numeric_value_abstains_deterministically():
     assert result.abstention.reason == "deterministic_policy_rejected"
 
 
-def test_unknown_or_contradicted_semantic_claim_abstains():
+def test_unknown_semantic_claim_abstains():
     class UnknownVerifier(Verifier):
         def verify(self, *, claim, evidence):
             return SemanticVerification(
                 label="unknown", evidence_ids=claim.evidence_ids, rationale_refs=claim.evidence_ids
             )
     result = planner(Provider(output()), verifier=UnknownVerifier()).generate(request())
+    assert result.abstention.reason == "semantic_claim_not_supported"
+
+
+def test_contradicted_semantic_claim_abstains():
+    class ContradictedVerifier(Verifier):
+        def verify(self, *, claim, evidence):
+            return SemanticVerification(
+                label="contradicted", evidence_ids=claim.evidence_ids, rationale_refs=claim.evidence_ids
+            )
+    result = planner(Provider(output()), verifier=ContradictedVerifier()).generate(request())
     assert result.abstention.reason == "semantic_claim_not_supported"
 
 
