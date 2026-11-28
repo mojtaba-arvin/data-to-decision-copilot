@@ -145,8 +145,7 @@ autonomous decision generation.
   - [x] Query history now retains all records by default; automatic pruning is
     opt-in through `--history-max-records N`.
   - [x] Explicit data lifecycle and backup-scope policy is documented in
-    [the data lifecycle runbook](operations/data-lifecycle.md); full-application
-    backup/restore and coordinated recovery remain open.
+    [the data lifecycle runbook](operations/data-lifecycle.md).
   - [ ] Evidence/DecisionTrace journal pruning remains disabled; source-data
     deletion and retention are controlled by the deployment owner.
 
@@ -154,16 +153,25 @@ autonomous decision generation.
 
 The implementation contract for full runtime recovery and process-supervised
 hard-bounded REST shutdown is recorded in
-[ADR 0016](adr/0016-operational-recovery-and-bounded-shutdown.md). A paired
-journal backup is not a runtime recovery bundle: the future bundle must also
-cover the DuckDB catalog and query-history database, validate all artifacts,
-and restore into a fresh directory. Original source snapshots, secrets,
-TLS keys, host configuration, and model weights remain separately managed
-external dependencies; do not claim they are included.
+[ADR 0016](adr/0016-operational-recovery-and-bounded-shutdown.md). The runtime
+recovery implementation is documented in
+[the full runtime recovery runbook](operations/runtime-recovery.md). It covers
+the DuckDB catalog and all three SQLite databases, validates artifact
+integrity, both journal chains, trace/evidence references, and the catalog
+fingerprint, then publishes a restore into a fresh directory. Original source
+snapshots, secrets, TLS keys, host configuration, and model weights remain
+separately managed external dependencies; do not claim they are included.
 
 - [x] A paired journal backup is restored into a fresh destination in a repeatable drill (PR #64).
 - [x] The restored evidence and decision-trace journals independently verify
   and historical trace replay succeeds against the restored evidence store (PRs #63–64).
+- [x] A full runtime recovery bundle contains the catalog and all three SQLite
+  databases, records a versioned integrity manifest, and restores atomically
+  into a new directory; exact-head CI is required before this implementation
+  gate is accepted.
+- [ ] A clean deployment-environment restore/re-query drill is recorded with
+  deployment-specific RPO/RTO targets; off-host encryption and authenticity
+  remain deployment responsibilities.
 - [ ] Upgrade tests cover databases created by the previous supported release.
 - [ ] Offline installation is verified on each published OS/architecture/Python
   combination, including required native dependencies.
