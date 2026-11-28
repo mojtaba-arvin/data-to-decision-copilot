@@ -9,7 +9,6 @@ from __future__ import annotations
 import hashlib
 import importlib.metadata
 import json
-import os
 import shutil
 import sqlite3
 import tempfile
