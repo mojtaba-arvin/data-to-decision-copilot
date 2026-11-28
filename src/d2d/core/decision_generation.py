@@ -1,8 +1,8 @@
 """Opt-in, provider-neutral model decision planning with fail-closed verification.
 
 This module defines a generation boundary only. It is not wired into the default
-DecisionRuntime or any API. The caller must supply evidence only after verifying
-the append-only Evidence journal.
+DecisionRuntime or any API. It resolves requested records only after independently
+verifying the append-only Evidence journal.
 """
 from __future__ import annotations
 
@@ -345,7 +345,35 @@ class ModelBackedDecisionPlanner:
             )
 
         try:
-            for claim in generated.claims:
+            semantic_claims = list(generated.claims)
+            semantic_claims.append(GeneratedClaim(
+                claim_id="__decision_action__", statement=generated.decision.action,
+                evidence_ids=generated.decision.evidence_ids, kind="recommendation",
+            ))
+            semantic_claims.append(GeneratedClaim(
+                claim_id="__decision_rationale__", statement=generated.decision.rationale,
+                evidence_ids=generated.decision.evidence_ids, kind="inference",
+            ))
+            for index, alternative in enumerate(generated.decision.alternatives):
+                semantic_claims.append(GeneratedClaim(
+                    claim_id=f"__alternative_{index}_action__", statement=alternative.action,
+                    evidence_ids=generated.decision.evidence_ids, kind="inference",
+                ))
+                semantic_claims.append(GeneratedClaim(
+                    claim_id=f"__alternative_{index}_tradeoff__", statement=alternative.trade_off,
+                    evidence_ids=generated.decision.evidence_ids, kind="inference",
+                ))
+            for index, statement in enumerate(generated.decision.reversal_conditions):
+                semantic_claims.append(GeneratedClaim(
+                    claim_id=f"__reversal_{index}__", statement=statement,
+                    evidence_ids=generated.decision.evidence_ids, kind="inference",
+                ))
+            for index, statement in enumerate(generated.decision.caveats):
+                semantic_claims.append(GeneratedClaim(
+                    claim_id=f"__caveat_{index}__", statement=statement,
+                    evidence_ids=generated.decision.evidence_ids, kind="inference",
+                ))
+            for claim in semantic_claims:
                 verification = self._verifier.verify(claim=claim, evidence=evidence)
                 if verification.label != "supported":
                     return DecisionGenerationResult.abstain(
