@@ -39,12 +39,15 @@ exact candidate commit. A green check on an earlier head SHA is not sufficient.
 - [ ] DuckDB execution is deployed with OS/container isolation for untrusted workloads; DuckDB memory limits are not treated as an OS sandbox.
 - [ ] Release artifacts and their SHA-256 hashes are retained.
 
-## Approval and publication
+## PR integration and publication
 
-- [ ] Required human review and protected-branch checks are satisfied; never fabricate reviews or bypass rulesets.
-- [ ] Merge only after all required checks are green on the current head SHA.
-- [ ] Tag the exact merged commit and publish the matching artifacts.
+- [ ] Record a complete diff and risk review; the implementer may perform this self-review. Never fabricate an independent review or approval.
+- [ ] All required protected-branch checks pass on the exact current head SHA; the branch is up to date and material review threads are resolved. Never bypass rulesets.
+- [ ] The implementer may merge the PR when GitHub rules permit it.
+- [ ] Tag the exact merged commit and publish the matching artifacts only after release-specific evidence and authorization are complete.
 - [ ] Verify the published install instructions against the released artifacts.
+
+PR merge is not release acceptance. Customer/production deployment, single-tenant security boundaries, benchmark claims, autonomous decision-generation gates, and any external acceptance remain separate.
 
 
 ## Resource and journal-growth measurements
