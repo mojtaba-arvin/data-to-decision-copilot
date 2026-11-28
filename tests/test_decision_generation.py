@@ -137,9 +137,13 @@ def request() -> DecisionGenerationRequest:
 
 def test_generation_is_disabled_by_default_and_provider_is_not_called():
     provider = Provider(output())
-    result = planner(provider, enabled=False).generate(
-        request=request(), evidence_store=Journal(evidence())
+    default_planner = ModelBackedDecisionPlanner(
+        provider=provider,
+        planner_artifact_sha256="b" * 64,
+        policy=DecisionPolicy(policy_id="test-policy", version="1"),
+        verifier=Verifier(),
     )
+    result = default_planner.generate(request=request(), evidence_store=Journal(evidence()))
     assert result.plan is None
     assert result.abstention is not None
     assert result.abstention.reason == "autonomous_generation_disabled"
