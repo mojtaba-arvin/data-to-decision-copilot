@@ -26,8 +26,13 @@ from d2d.core.decision_trace_store import SCHEMA_VERSION as TRACE_SCHEMA_VERSION
 from d2d.core.decision_trace_store import SQLiteDecisionTraceStore
 from d2d.core.evidence_store import SCHEMA_VERSION as EVIDENCE_SCHEMA_VERSION
 from d2d.core.evidence_store import SQLiteEvidenceStore
-from d2d.core.journal_restore import _fsync_directory, _fsync_file, _rename_directory_no_replace
-from d2d.query_history import SQLiteQueryHistoryStore
+from d2d.core.journal_restore import (
+    _fsync_directory,
+    _fsync_file,
+    _rename_directory_no_replace,
+    _validate_source_database,
+)
+from d2d.query_history import SQLiteQueryHistoryStore, _verify_history_database
 
 FORMAT_VERSION = 1
 HISTORY_SCHEMA_VERSION = 1
@@ -126,6 +131,15 @@ def _verify_sqlite_stores(directory: Path) -> tuple[int, str, int, str, int, int
     history_path = directory / ARTIFACTS["query_history"]
     for path in (evidence_path, trace_path, history_path):
         _sqlite_integrity(path)
+    _validate_source_database(
+        evidence_path, journal_kind="evidence", schema_version=EVIDENCE_SCHEMA_VERSION
+    )
+    _validate_source_database(
+        trace_path, journal_kind="decision_trace", schema_version=TRACE_SCHEMA_VERSION
+    )
+    history_report = _verify_history_database(history_path)
+    if not history_report.valid:
+        raise ValueError("query-history verification failed")
 
     evidence = SQLiteEvidenceStore(evidence_path)
     trace = SQLiteDecisionTraceStore(trace_path)
@@ -135,14 +149,6 @@ def _verify_sqlite_stores(directory: Path) -> tuple[int, str, int, str, int, int
     trace_report = trace.verify(evidence_store=evidence)
     if not trace_report.valid:
         raise ValueError("decision-trace journal or evidence reference verification failed")
-    history = SQLiteQueryHistoryStore(history_path)
-    try:
-        history_report = history.verify()
-    finally:
-        history.close()
-    if not history_report.valid:
-        raise ValueError("query-history verification failed")
-
     evidence_count, evidence_head = _journal_head(evidence_path, "evidence_journal")
     trace_count, trace_head = _journal_head(trace_path, "decision_trace_journal")
     return (
@@ -216,6 +222,17 @@ def backup_runtime(
         paths = {role: staged / name for role, name in ARTIFACTS.items()}
         _copy_durable(sources["catalog"], paths["catalog"])
 
+        _validate_source_database(
+            sources["evidence"], journal_kind="evidence",
+            schema_version=EVIDENCE_SCHEMA_VERSION,
+        )
+        _validate_source_database(
+            sources["decision_trace"], journal_kind="decision_trace",
+            schema_version=TRACE_SCHEMA_VERSION,
+        )
+        history_preflight = _verify_history_database(sources["query_history"])
+        if not history_preflight.valid:
+            raise ValueError("source query-history verification failed")
         evidence = SQLiteEvidenceStore(sources["evidence"])
         trace = SQLiteDecisionTraceStore(sources["decision_trace"])
         evidence_report = evidence.verify()
@@ -228,9 +245,6 @@ def backup_runtime(
         trace.backup(paths["decision_trace"])
         history = SQLiteQueryHistoryStore(sources["query_history"])
         try:
-            history_report = history.verify()
-            if not history_report.valid:
-                raise ValueError("source query-history verification failed")
             history.backup(paths["query_history"])
         finally:
             history.close()
