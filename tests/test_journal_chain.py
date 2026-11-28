@@ -564,3 +564,89 @@ def test_restore_parent_directory_fsync_failure_keeps_published_verified_databas
     assert destination.is_file()
     assert segment_verifier(destination, 1, GENESIS).valid
     assert not list(tmp_path.glob(".d2d-chain-restore-*"))
+
+def test_rejects_missing_intermediate_segment(tmp_path: Path):
+    first = make_segment(
+        tmp_path, name="missing-first", first=1, last=2,
+        previous_entry=GENESIS, previous_manifest=GENESIS,
+    )
+    middle = make_segment(
+        tmp_path, name="missing-middle", first=3, last=4,
+        previous_entry=first[3], previous_manifest=first[2],
+    )
+    last = make_segment(
+        tmp_path, name="missing-last", first=5, last=6,
+        previous_entry=middle[3], previous_manifest=middle[2],
+    )
+
+    report = verify_archive_chain(
+        [(first[0], first[1]), (last[0], last[1])],
+        journal_kind="evidence", schema_version=1, verify_segment=segment_verifier,
+    )
+
+    assert not report.valid
+    assert "sequence gap" in (report.error or "") or "previous manifest link" in (report.error or "")
+
+
+def test_rejects_duplicate_segment_in_archive_chain(tmp_path: Path):
+    first = make_segment(
+        tmp_path, name="duplicate-first", first=1, last=2,
+        previous_entry=GENESIS, previous_manifest=GENESIS,
+    )
+
+    report = verify_archive_chain(
+        [(first[0], first[1]), (first[0], first[1])],
+        journal_kind="evidence", schema_version=1, verify_segment=segment_verifier,
+    )
+
+    assert not report.valid
+    assert "duplicate segment ID" in (report.error or "") or "sequence gap" in (report.error or "")
+
+
+def test_restore_rejects_missing_segment_without_publishing(tmp_path: Path):
+    first = make_segment(
+        tmp_path, name="restore-missing-first", first=1, last=1,
+        previous_entry=GENESIS, previous_manifest=GENESIS,
+    )
+    middle = make_segment(
+        tmp_path, name="restore-missing-middle", first=2, last=2,
+        previous_entry=first[3], previous_manifest=first[2],
+    )
+    last = make_segment(
+        tmp_path, name="restore-missing-last", first=3, last=3,
+        previous_entry=middle[3], previous_manifest=middle[2],
+    )
+    destination = tmp_path / "missing-restore.sqlite"
+
+    with pytest.raises(ValueError, match="invalid archive chain"):
+        restore_archive_chain(
+            [(first[0], first[1]), (last[0], last[1])],
+            destination,
+            journal_kind="evidence",
+            schema_version=1,
+            verify_segment=segment_verifier,
+        )
+
+    assert not destination.exists()
+    assert not list(tmp_path.glob(".d2d-chain-restore-*"))
+
+
+def test_restore_rejects_duplicate_segment_without_publishing(tmp_path: Path):
+    first = make_segment(
+        tmp_path, name="restore-duplicate-first", first=1, last=1,
+        previous_entry=GENESIS, previous_manifest=GENESIS,
+    )
+    destination = tmp_path / "duplicate-restore.sqlite"
+
+    with pytest.raises(ValueError, match="invalid archive chain"):
+        restore_archive_chain(
+            [(first[0], first[1]), (first[0], first[1])],
+            destination,
+            journal_kind="evidence",
+            schema_version=1,
+            verify_segment=segment_verifier,
+        )
+
+    assert not destination.exists()
+    assert not list(tmp_path.glob(".d2d-chain-restore-*"))
+
