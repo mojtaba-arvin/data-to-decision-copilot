@@ -135,3 +135,24 @@ def test_backup_and_restore_refuse_existing_destinations(tmp_path: Path) -> None
     restore_target.mkdir()
     with pytest.raises(FileExistsError):
         restore_runtime(bundle, restore_target)
+
+
+def test_backup_rejects_malformed_sqlite_schema_without_repairing_it(tmp_path: Path) -> None:
+    import sqlite3
+
+    sources = _runtime(tmp_path)
+    with sqlite3.connect(sources["history"]) as connection:
+        connection.execute("DROP TABLE query_history")
+    destination = tmp_path / "must-not-publish"
+    with pytest.raises(ValueError, match="source query-history verification failed"):
+        backup_runtime(
+            catalog=sources["catalog"],
+            evidence_db=sources["evidence"],
+            trace_db=sources["trace"],
+            history_db=sources["history"],
+            output=destination,
+        )
+    assert not destination.exists()
+    with sqlite3.connect(sources["history"]) as connection:
+        columns = connection.execute("PRAGMA table_info(query_history)").fetchall()
+    assert columns == []
