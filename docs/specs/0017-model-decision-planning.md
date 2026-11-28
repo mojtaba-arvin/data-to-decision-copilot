@@ -9,10 +9,10 @@ held out, and not release-eligible.
 
 ## Boundary
 
-A future provider implements a narrow structured-generation interface. It
-receives only an explicit user goal, explicit user constraints, and a bounded
-projection of evidence supplied by the caller after successful Evidence-journal
-verification. The projection includes evidence IDs, source/schema provenance,
+A future provider implements a narrow structured-generation interface. The
+planner accepts only an explicit user goal, explicit user constraints, and
+Evidence IDs. It verifies the append-only Evidence journal itself, resolves each
+requested record, and projects bounded evidence only after successful verification. The projection includes evidence IDs, source/schema provenance,
 query/result digests, execution timestamp, columns, and captured rows. It never
 includes SQL text, a SQL executor, database handle, tool interface, credentials,
 or write capability.
