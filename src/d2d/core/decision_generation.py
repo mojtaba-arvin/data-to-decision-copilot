@@ -387,7 +387,7 @@ class ModelBackedDecisionPlanner:
                         "semantic_provenance_mismatch",
                         f"Claim {claim.claim_id} verifier references did not match claim references.",
                     )
-                if set(verification.rationale_refs) - available_ids:
+                if set(verification.rationale_refs) - set(claim.evidence_ids):
                     return DecisionGenerationResult.abstain(
                         "semantic_provenance_mismatch",
                         f"Claim {claim.claim_id} verifier returned unknown rationale references.",
