@@ -11,9 +11,10 @@ strict bounded output schema, bounded evidence projection resolved only after
 journal verification, deterministic abstention behavior, and explicit provenance.
 The model does not supply a confidence score; the compatibility adapter assigns
 only a conservative medium label and makes no calibration claim. Keep the implementation isolated
-from the default query/decision runtime. Generation is disabled by default and
-cannot proceed without an explicitly configured release-eligible semantic
-verifier.
+from the default query/decision runtime. Generation is disabled by default
+and guarded by a hard-coded, closed release-gate constant that runtime
+configuration cannot override. It also requires an explicitly configured
+release-eligible semantic verifier.
 
 ## Rationale
 
