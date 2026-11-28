@@ -25,6 +25,10 @@ class QueryPlanningError(ValueError):
     """Raised when a proposed plan cannot be grounded in the current schema."""
 
 
+class QueryInputError(ValueError):
+    """Raised when the caller supplied an invalid query question."""
+
+
 class FilterOperator(StrEnum):
     EQ = "eq"
     NE = "ne"
@@ -297,7 +301,7 @@ class DeterministicQueryPlanner:
 
     def plan(self, question: str, snapshot: SchemaSnapshot) -> QueryPlan:
         if not question.strip():
-            raise QueryPlanningError("question must not be empty")
+            raise QueryInputError("question must not be empty")
         if self.template.schema_fingerprint != snapshot.fingerprint:
             raise QueryPlanningError("query plan schema fingerprint is stale")
         return self.template
@@ -345,7 +349,7 @@ class QueryPlanningRuntime:
 
     async def run(self, question: str, planner: QueryPlanner) -> QueryPlanningResult:
         if not question.strip():
-            raise QueryPlanningError("question must not be empty")
+            raise QueryInputError("question must not be empty")
         snapshot = self._data_source.snapshot()
         identity = planner.identity
         plan = planner.plan(question, snapshot)
