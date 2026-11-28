@@ -8,13 +8,17 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from collections.abc import Mapping
+from datetime import date, datetime, time
+from decimal import Decimal
 from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from d2d.core.contracts import (
     Alternative,
+    ClaimKind,
     Confidence,
     Decision,
     DecisionClaim,
@@ -191,6 +195,20 @@ def _validate_evidence_projection(evidence: tuple[Evidence, ...]) -> None:
             raise ValueError("evidence cell exceeds context limit")
 
 
+def _json_cell(value: object) -> object:
+    if value is None or isinstance(value, (str, int, bool)):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError("non-finite evidence values are not allowed")
+        return value
+    if isinstance(value, Decimal):
+        return format(value, "f")
+    if isinstance(value, (date, datetime, time)):
+        return value.isoformat()
+    raise ValueError("unsupported evidence cell type")
+
+
 def _evidence_projection(evidence: tuple[Evidence, ...]) -> list[dict[str, object]]:
     """Project only bounded result/provenance fields; SQL is deliberately excluded."""
     return [
@@ -203,7 +221,7 @@ def _evidence_projection(evidence: tuple[Evidence, ...]) -> list[dict[str, objec
             "result_sha256": item.result_sha256,
             "executed_at": item.executed_at.isoformat() if item.executed_at else None,
             "columns": list(item.columns),
-            "rows": [list(row) for row in item.rows],
+            "rows": [[_json_cell(cell) for cell in row] for row in item.rows],
             "row_count": item.row_count,
             "truncated": item.truncated,
         }
@@ -224,7 +242,9 @@ def build_decision_prompt(
         "user_constraints": list(request.constraints),
         "journal_verified_evidence": _evidence_projection(evidence),
     }
-    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    encoded = json.dumps(
+        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
+    )
     if len(encoded.encode("utf-8")) > MAX_CONTEXT_BYTES:
         raise ValueError("decision context exceeds byte limit")
     prompt = (
@@ -242,6 +262,15 @@ def build_decision_prompt(
     if len(prompt.encode("utf-8")) > MAX_PROMPT_BYTES:
         raise ValueError("decision prompt exceeds byte limit")
     return prompt
+
+
+def _reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON key: {key}")
+        result[key] = value
+    return result
 
 
 def _convert_plan(output: GeneratedDecisionPlan) -> DecisionPlan:
@@ -262,7 +291,7 @@ def _convert_plan(output: GeneratedDecisionPlan) -> DecisionPlan:
             claim_id=item.claim_id,
             statement=item.statement,
             evidence_ids=item.evidence_ids,
-            kind=item.kind,
+            kind=ClaimKind(item.kind),
         )
         for item in output.claims
     )
@@ -309,7 +338,12 @@ class ModelBackedDecisionPlanner:
             )
         try:
             request.validate_context()
-            journal = evidence_store.verify()
+            try:
+                journal = evidence_store.verify()
+            except Exception:
+                return DecisionGenerationResult.abstain(
+                    "evidence_journal_invalid", "Evidence journal verification failed."
+                )
             if not journal.valid:
                 return DecisionGenerationResult.abstain(
                     "evidence_journal_invalid", "Evidence journal verification failed."
@@ -321,7 +355,7 @@ class ModelBackedDecisionPlanner:
                 )
             evidence = tuple(item for item in resolved if item is not None)
             prompt = build_decision_prompt(request, evidence)
-        except (ValueError, ValidationError) as exc:
+        except (TypeError, ValueError, ValidationError) as exc:
             return DecisionGenerationResult.abstain("invalid_or_oversized_context", str(exc)[:500])
 
         prompt_digest = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
@@ -336,11 +370,16 @@ class ModelBackedDecisionPlanner:
         except Exception:
             return DecisionGenerationResult.abstain("provider_failure", "Decision provider failed.")
 
-        if len(raw.encode("utf-8")) > MAX_OUTPUT_BYTES:
+        if not isinstance(raw, str) or len(raw.encode("utf-8")) > MAX_OUTPUT_BYTES:
             return DecisionGenerationResult.abstain("malformed_output", "Provider output exceeded byte limit.")
         try:
-            generated = GeneratedDecisionPlan.model_validate_json(raw)
-        except (ValidationError, ValueError):
+            parsed = json.loads(
+                raw,
+                object_pairs_hook=_reject_duplicate_keys,
+                parse_constant=lambda value: (_ for _ in ()).throw(ValueError(value)),
+            )
+            generated = GeneratedDecisionPlan.model_validate(parsed)
+        except (json.JSONDecodeError, ValidationError, ValueError, TypeError):
             return DecisionGenerationResult.abstain("malformed_output", "Provider output did not match the strict schema.")
 
         available_ids = {item.evidence_id for item in evidence}
