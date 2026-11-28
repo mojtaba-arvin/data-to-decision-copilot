@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import threading
 from http.server import ThreadingHTTPServer
+from typing import NoReturn
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -72,7 +73,7 @@ def test_rest_reports_invalid_input_with_stable_code(tmp_path: Path) -> None:
 def test_rest_reports_explicit_model_abstention(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     def abstain(
         self: ModelBackedQueryPlanner, question: str, snapshot: SchemaSnapshot
-    ) -> object:
+    ) -> NoReturn:
         raise QueryAbstainedError("private model reasoning")
 
     monkeypatch.setattr(ModelBackedQueryPlanner, "plan", abstain)
