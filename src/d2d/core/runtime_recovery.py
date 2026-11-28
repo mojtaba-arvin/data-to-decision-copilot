@@ -120,7 +120,7 @@ def _manifest_digest(document: dict[str, Any]) -> str:
     return hashlib.sha256(_canonical(payload)).hexdigest()
 
 
-def _verify_sqlite_stores(directory: Path) -> tuple[int, str, int, str, int]:
+def _verify_sqlite_stores(directory: Path) -> tuple[int, str, int, str, int, int]:
     evidence_path = directory / ARTIFACTS["evidence"]
     trace_path = directory / ARTIFACTS["decision_trace"]
     history_path = directory / ARTIFACTS["query_history"]
@@ -147,17 +147,21 @@ def _verify_sqlite_stores(directory: Path) -> tuple[int, str, int, str, int]:
     trace_count, trace_head = _journal_head(trace_path, "decision_trace_journal")
     return (
         evidence_count, evidence_head, trace_count, trace_head,
-        history_report.records_checked,
+        history_report.records_checked, trace_report.evidence_checked,
     )
 
 
 def _validate_runtime(provider: str, model: str, history_max_records: int | None) -> None:
-    if provider not in {"rules", "ollama"}:
+    if not isinstance(provider, str) or provider not in {"rules", "ollama"}:
         raise ValueError("provider must be 'rules' or 'ollama'")
-    if not model or len(model) > 200 or any(ord(char) < 32 for char in model):
+    if not isinstance(model, str) or not model or len(model) > 200 or any(ord(char) < 32 for char in model):
         raise ValueError("model identifier is invalid")
-    if history_max_records is not None and history_max_records < 1:
-        raise ValueError("history_max_records must be positive when configured")
+    if history_max_records is not None and (
+        not isinstance(history_max_records, int)
+        or isinstance(history_max_records, bool)
+        or history_max_records < 1
+    ):
+        raise ValueError("history_max_records must be a positive integer when configured")
 
 
 def backup_runtime(
@@ -253,7 +257,10 @@ def backup_runtime(
             "catalog_schema_fingerprint": catalog_fingerprint,
             "journal_heads": {
                 "evidence": {"records": counts[0], "head_sha256": counts[1]},
-                "decision_trace": {"records": counts[2], "head_sha256": counts[3]},
+                "decision_trace": {
+                "records": counts[2], "head_sha256": counts[3],
+                "evidence_checked": counts[5],
+            },
                 "query_history": {"records": counts[4]},
             },
             "runtime": {
@@ -369,6 +376,7 @@ def restore_runtime(
             or counts[2] != expected_heads["decision_trace"]["records"]
             or counts[3] != expected_heads["decision_trace"]["head_sha256"]
             or counts[4] != expected_heads["query_history"]["records"]
+            or counts[5] != expected_heads["decision_trace"]["evidence_checked"]
         ):
             raise ValueError("restored journal heads or record counts differ from the manifest")
         for path in staged.iterdir():
@@ -384,7 +392,7 @@ def restore_runtime(
         catalog_schema_fingerprint=fingerprint,
         evidence_records=counts[0], evidence_head_sha256=counts[1],
         decision_trace_records=counts[2], decision_trace_head_sha256=counts[3],
-        traces_evidence_checked=_verify_sqlite_stores(target)[4],
+        traces_evidence_checked=counts[5],
         query_history_records=counts[4], provider=str(runtime["provider"]),
         model=str(runtime["model"]), history_max_records=runtime["history_max_records"],
     )
