@@ -154,6 +154,10 @@ try {
   await page.getByRole("button", { name: "اجرای پرس‌وجو" }).click();
   await page.getByText("مدل پیکربندی‌شده در دسترس نیست. وضعیت Ollama و برچسب دقیق مدل را بررسی کنید.").waitFor();
 
+  queryMode = "success";
+  await page.getByRole("button", { name: "اجرای پرس‌وجو" }).click();
+  await page.getByText("پرس‌وجو با ثبت شواهد تکمیل شد.").waitFor();
+
   for (const width of [320, 360, 768, 1024, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     for (const direction of ["rtl", "ltr"]) {
@@ -176,7 +180,10 @@ try {
         dimensions.body <= dimensions.viewport,
         `body overflows at ${width}px in ${direction}: ${JSON.stringify(dimensions)}`,
       );
-      for (const selector of ["#question", "#submit", "#language-toggle", "#status"]) {
+      for (const selector of [
+        "#question", "#submit", "#language-toggle", "#status",
+        "#decision-section", "#decision-form", "#decision-submit",
+      ]) {
         const bounds = await page.locator(selector).boundingBox();
         assert.ok(bounds, `${selector} is visible at ${width}px in ${direction}`);
         assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= width + 1,
