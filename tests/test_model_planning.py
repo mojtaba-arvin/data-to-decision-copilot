@@ -89,7 +89,9 @@ def test_model_output_becomes_only_a_typed_plan(snapshot: SchemaSnapshot) -> Non
     assert "DROP TABLE" not in provider.requests[0].system_prompt
     assert snapshot.fingerprint in provider.requests[0].user_prompt
     assert provider.requests[0].response_schema["title"] == "QueryPlanOrAbstention"
-    assert len(provider.requests[0].response_schema["oneOf"]) == 2
+    alternatives = provider.requests[0].response_schema["oneOf"]
+    assert isinstance(alternatives, list)
+    assert len(alternatives) == 2
 
 
 @pytest.mark.parametrize(
