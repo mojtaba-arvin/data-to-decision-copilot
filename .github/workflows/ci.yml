@@ -15,8 +15,7 @@ on:
 permissions:
   contents: read
 
-# A new commit cancels only the older run for this same PR/ref.
-# Separate PRs and independent group lanes never cancel one another.
+# Keep one live CI run per PR while allowing independent PRs and main pushes.
 concurrency:
   group: d2d-ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -87,9 +86,17 @@ jobs:
       - name: Verify installed wheel CLI
         if: hashFiles('src/d2d/cli.py') != ''
         run: uv run --no-project --with dist/*.whl d2d --help
+      - name: Publish distributions for offline smoke
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-distributions
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 1
 
   offline-wheelhouse-smoke:
     name: Offline wheelhouse install and demo journey
+    needs: package
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -102,18 +109,30 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+      - name: Restore runtime wheelhouse
+        id: wheelhouse-cache
+        uses: actions/cache@v4
+        with:
+          path: wheelhouse/runtime
+          key: d2d-runtime-wheelhouse-ubuntu-24.04-py3.13-${{ hashFiles('uv.lock') }}
       - name: Export locked runtime dependencies
         run: uv export --locked --format requirements-txt --no-dev --no-emit-project -o requirements-runtime.txt
-      - name: Prepare wheelhouse
+      - name: Prepare cached runtime wheelhouse
+        if: steps.wheelhouse-cache.outputs.cache-hit != 'true'
         run: |
-          mkdir wheelhouse
-          python -m pip download --only-binary=:all: -r requirements-runtime.txt -d wheelhouse/
-          uv build
-          cp dist/*.whl wheelhouse/
+          mkdir -p wheelhouse/runtime
+          python -m pip download --only-binary=:all: -r requirements-runtime.txt -d wheelhouse/runtime/
+      - name: Download the exact distributions built by package job
+        uses: actions/download-artifact@v4
+        with:
+          name: python-distributions
+          path: dist
       - name: Install exclusively from wheelhouse
         run: |
+          mkdir -p wheelhouse
+          cp dist/*.whl wheelhouse/
           python -m venv offline-venv
-          offline-venv/bin/python -m pip install --no-index --find-links ./wheelhouse ./wheelhouse/data_to_decision_copilot-*.whl
+          offline-venv/bin/python -m pip install --no-index --find-links ./wheelhouse/runtime --find-links ./wheelhouse ./wheelhouse/data_to_decision_copilot-*.whl
       - name: Run installed offline demo journey
         run: |
           offline-venv/bin/d2d --help
@@ -127,19 +146,26 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Cache pinned Playwright package
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: d2d-playwright-npm-node22-1.55.0
+      - name: Cache Chromium browser binaries
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: d2d-playwright-chromium-ubuntu-24.04-1.55.0
       - name: Install pinned Playwright
-        run: npm install --no-save --no-package-lock playwright@1.55.0
-      - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+        run: npm install --no-save --no-package-lock --prefer-offline playwright@1.55.0
+      - name: Install Chromium (uses restored browser cache)
+        run: npx playwright install chromium
       - name: Serve browser UI
         run: |
-          python -m http.server 4173 --bind 127.0.0.1 --directory ui >/tmp/d2d-ui.log 2>&1 &
+          python3 -m http.server 4173 --bind 127.0.0.1 --directory ui >/tmp/d2d-ui.log 2>&1 &
           echo $! > /tmp/d2d-ui.pid
           for attempt in $(seq 1 30); do
             if curl --fail --silent http://127.0.0.1:4173/ >/dev/null; then
@@ -150,8 +176,7 @@ jobs:
           cat /tmp/d2d-ui.log
           exit 1
       - name: Verify English/Persian RTL and browser golden path
-        run: |
-          node tests/browser/ui.spec.mjs
+        run: node tests/browser/ui.spec.mjs
       - name: Stop browser UI server
         if: always()
         run: |
@@ -194,4 +219,3 @@ jobs:
         env:
           D2D_OLLAMA_MODEL: qwen2.5:3b
         run: uv run --locked python scripts/ollama_smoke.py
-
