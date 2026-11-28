@@ -3,13 +3,14 @@ from __future__ import annotations
 import json
 import threading
 from http.server import ThreadingHTTPServer
-from typing import NoReturn
 from pathlib import Path
+from typing import NoReturn
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 import pytest
 
+from d2d.api import create_server
 from d2d.application import CopilotService, build_service
 from d2d.connectors.base import SchemaSnapshot
 from d2d.core.model_planning import (
@@ -19,7 +20,6 @@ from d2d.core.model_planning import (
 )
 from d2d.core.ollama_provider import OllamaProviderError, OllamaStructuredPlanProvider
 from d2d.demo import create_demo_catalog
-from d2d.api import create_server
 
 
 def _request(server: ThreadingHTTPServer, question: object) -> tuple[int, dict[str, object]]:
