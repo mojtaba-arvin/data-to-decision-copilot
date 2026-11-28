@@ -210,3 +210,8 @@ class SQLiteQueryHistoryStore:
     def close(self) -> None:
         with self._lock:
             self._connection.close()
+
+
+def verify_history_database(path: str | Path) -> QueryHistoryVerificationReport:
+    """Verify an existing query-history database without creating or changing tables."""
+    return _verify_history_database(Path(path))

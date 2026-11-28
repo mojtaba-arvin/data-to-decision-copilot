@@ -480,3 +480,27 @@ def backup_paired_journals(
         trace_head_sha256=trace_chain.head_sha256,
         traces_evidence_checked=trace_verification.evidence_checked,
     )
+
+
+def rename_directory_no_replace(source: Path, destination: Path) -> None:
+    """Public atomic no-replace directory publication primitive."""
+    _rename_directory_no_replace(source, destination)
+
+
+def fsync_file(path: Path) -> None:
+    """Public durable file synchronization primitive."""
+    _fsync_file(path)
+
+
+def fsync_directory(path: Path) -> None:
+    """Public durable directory synchronization primitive."""
+    _fsync_directory(path)
+
+
+def validate_source_database(
+    path: Path, *, journal_kind: str, schema_version: int
+) -> None:
+    """Validate a supported journal schema without initializing or modifying it."""
+    _validate_source_database(
+        path, journal_kind=journal_kind, schema_version=schema_version
+    )
