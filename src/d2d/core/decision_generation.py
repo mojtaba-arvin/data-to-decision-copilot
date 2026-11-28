@@ -43,24 +43,15 @@ class DecisionGenerationRequest(BaseModel):
 
     user_goal: str = Field(min_length=1, max_length=MAX_GOAL_CHARS)
     constraints: tuple[str, ...] = Field(default=(), max_length=MAX_CONSTRAINTS)
-    evidence: tuple[Evidence, ...] = Field(min_length=1, max_length=MAX_EVIDENCE)
+    evidence_ids: tuple[str, ...] = Field(min_length=1, max_length=MAX_EVIDENCE)
 
     def validate_context(self) -> None:
         if not self.user_goal.strip():
             raise ValueError("user goal must not be blank")
         if any(not item.strip() or len(item) > MAX_CONSTRAINT_CHARS for item in self.constraints):
             raise ValueError("constraints must be non-empty and bounded")
-        if len({item.evidence_id for item in self.evidence}) != len(self.evidence):
+        if len(set(self.evidence_ids)) != len(self.evidence_ids):
             raise ValueError("evidence IDs must be unique")
-        for item in self.evidence:
-            if item.status.value != "executed" or not item.source_id or not item.schema_fingerprint:
-                raise ValueError("only executed evidence with source/schema provenance is allowed")
-            if item.truncated:
-                raise ValueError("truncated evidence cannot be used for decision generation")
-            if len(item.columns) > MAX_COLUMNS or len(item.rows) > MAX_ROWS:
-                raise ValueError("evidence exceeds row/column context limits")
-            if any(len(str(cell)) > MAX_CELL_CHARS for row in item.rows for cell in row):
-                raise ValueError("evidence cell exceeds context limit")
 
 
 class GeneratedAlternative(BaseModel):
@@ -131,6 +122,17 @@ class SemanticVerifierIdentity(BaseModel):
     release_eligible: bool = False
 
 
+class JournalVerification(Protocol):
+    valid: bool
+    error: str | None: ...
+
+
+class EvidenceJournal(Protocol):
+    def verify(self) -> JournalVerification: ...
+
+    def get(self, evidence_id: str) -> Evidence | None: ...
+
+
 class StructuredDecisionProvider(Protocol):
     """Any provider may implement this bounded structured-output interface."""
 
@@ -168,6 +170,20 @@ class DecisionGenerationResult(BaseModel):
         return cls(abstention=DecisionAbstention(reason=reason, detail=detail))
 
 
+def _validate_evidence_projection(evidence: tuple[Evidence, ...]) -> None:
+    if not evidence or len(evidence) > MAX_EVIDENCE:
+        raise ValueError("evidence count is outside the configured bound")
+    for item in evidence:
+        if item.status.value != "executed" or not item.source_id or not item.schema_fingerprint:
+            raise ValueError("only executed evidence with source/schema provenance is allowed")
+        if item.truncated:
+            raise ValueError("truncated evidence cannot be used for decision generation")
+        if len(item.columns) > MAX_COLUMNS or len(item.rows) > MAX_ROWS:
+            raise ValueError("evidence exceeds row/column context limits")
+        if any(len(str(cell)) > MAX_CELL_CHARS for row in item.rows for cell in row):
+            raise ValueError("evidence cell exceeds context limit")
+
+
 def _evidence_projection(evidence: tuple[Evidence, ...]) -> list[dict[str, object]]:
     """Project only bounded result/provenance fields; SQL is deliberately excluded."""
     return [
@@ -188,13 +204,18 @@ def _evidence_projection(evidence: tuple[Evidence, ...]) -> list[dict[str, objec
     ]
 
 
-def build_decision_prompt(request: DecisionGenerationRequest) -> str:
+def build_decision_prompt(
+    request: DecisionGenerationRequest, evidence: tuple[Evidence, ...]
+) -> str:
     """Build deterministic bounded context. User/evidence text is data, never policy."""
     request.validate_context()
+    _validate_evidence_projection(evidence)
+    if {item.evidence_id for item in evidence} != set(request.evidence_ids):
+        raise ValueError("prompt evidence must exactly match requested journal evidence")
     payload = {
         "user_goal": request.user_goal,
         "user_constraints": list(request.constraints),
-        "journal_verified_evidence": _evidence_projection(request.evidence),
+        "journal_verified_evidence": _evidence_projection(evidence),
     }
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     if len(encoded.encode("utf-8")) > MAX_CONTEXT_BYTES:
@@ -267,7 +288,9 @@ class ModelBackedDecisionPlanner:
         self._enabled = enabled
         self._timeout = timeout_seconds
 
-    def generate(self, request: DecisionGenerationRequest) -> DecisionGenerationResult:
+    def generate(
+        self, *, request: DecisionGenerationRequest, evidence_store: EvidenceJournal
+    ) -> DecisionGenerationResult:
         if not self._enabled:
             return DecisionGenerationResult.abstain(
                 "autonomous_generation_disabled", "Autonomous decision generation is disabled."
@@ -278,7 +301,19 @@ class ModelBackedDecisionPlanner:
                 "Persian/English semantic verification has no measured release-eligible profile.",
             )
         try:
-            prompt = build_decision_prompt(request)
+            request.validate_context()
+            journal = evidence_store.verify()
+            if not journal.valid:
+                return DecisionGenerationResult.abstain(
+                    "evidence_journal_invalid", "Evidence journal verification failed."
+                )
+            resolved = tuple(evidence_store.get(item) for item in request.evidence_ids)
+            if any(item is None for item in resolved):
+                return DecisionGenerationResult.abstain(
+                    "evidence_unavailable", "One or more requested evidence records are unavailable."
+                )
+            evidence = tuple(item for item in resolved if item is not None)
+            prompt = build_decision_prompt(request, evidence)
         except (ValueError, ValidationError) as exc:
             return DecisionGenerationResult.abstain("invalid_or_oversized_context", str(exc)[:500])
 
@@ -301,7 +336,7 @@ class ModelBackedDecisionPlanner:
         except (ValidationError, ValueError):
             return DecisionGenerationResult.abstain("malformed_output", "Provider output did not match the strict schema.")
 
-        available_ids = {item.evidence_id for item in request.evidence}
+        available_ids = {item.evidence_id for item in evidence}
         if set(generated.decision.evidence_ids) - available_ids or any(
             set(claim.evidence_ids) - available_ids for claim in generated.claims
         ):
@@ -311,7 +346,7 @@ class ModelBackedDecisionPlanner:
 
         try:
             for claim in generated.claims:
-                verification = self._verifier.verify(claim=claim, evidence=request.evidence)
+                verification = self._verifier.verify(claim=claim, evidence=evidence)
                 if verification.label != "supported":
                     return DecisionGenerationResult.abstain(
                         "semantic_claim_not_supported",
@@ -336,7 +371,7 @@ class ModelBackedDecisionPlanner:
             plan = _convert_plan(generated)
             report = evaluate_policy(
                 plan,
-                evidence=request.evidence,
+                evidence=evidence,
                 policy=self._policy.model_copy(
                     update={"require_alternatives": True, "require_reversal_conditions": True}
                 ),
